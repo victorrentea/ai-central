@@ -1,0 +1,45 @@
+graph LR
+  linkStyle default fill:#ffffff
+
+  subgraph diagram ["Component View: Workshop Live Interaction Tool - Railway Backend"]
+    style diagram fill:#ffffff,stroke:#ffffff
+
+    subgraph 9 ["Workshop Live Interaction Tool"]
+      style 9 fill:#ffffff,stroke:#144d2e,color:#144d2e
+
+      subgraph 12 ["Railway Backend"]
+        style 12 fill:#ffffff,stroke:#3e703e,color:#3e703e
+
+        13["<div style='font-weight: bold'>Bootstrap</div><div style='font-size: 70%; margin-top: 0px'>[Component: railway/app.py]</div><div style='font-size: 80%; margin-top:10px'>Registers route ordering,<br />session guards, and startup<br />stamping.</div>"]
+        style 13 fill:#d6e8c8,stroke:#95a28c,color:#10210f
+        14["<div style='font-weight: bold'>Shared Core</div><div style='font-size: 70%; margin-top: 0px'>[Component: shared/*]</div><div style='font-size: 80%; margin-top:10px'>AppState, auth, session<br />registry/guard, metrics,<br />messaging, and version<br />helpers.</div>"]
+        style 14 fill:#d6e8c8,stroke:#95a28c,color:#10210f
+        15["<div style='font-weight: bold'>WebSocket bridge</div><div style='font-size: 70%; margin-top: 0px'>[Component: features/ws/*]</div><div style='font-size: 80%; margin-top:10px'>Daemon auth, session-scoped<br />browser sockets, participant<br />proxy bridge, and broadcast<br />fan-out.</div>"]
+        style 15 fill:#d6e8c8,stroke:#95a28c,color:#10210f
+        16["<div style='font-weight: bold'>Page routes</div><div style='font-size: 70%; margin-top: 0px'>[Component: features/pages/router.py]</div><div style='font-size: 80%; margin-top:10px'>Landing, participant, notes,<br />quiz history, and remote host<br />pages.</div>"]
+        style 16 fill:#d6e8c8,stroke:#95a28c,color:#10210f
+        17["<div style='font-weight: bold'>Public notes and key points</div><div style='font-size: 70%; margin-top: 0px'>[Component: features/session/notes_router.py]</div><div style='font-size: 80%; margin-top:10px'>Session-scoped summary and<br />notes endpoints.</div>"]
+        style 17 fill:#d6e8c8,stroke:#95a28c,color:#10210f
+      end
+
+      10["<div style='font-weight: bold'>Participant SPA</div><div style='font-size: 70%; margin-top: 0px'>[Container: HTML/CSS/JavaScript]</div><div style='font-size: 80%; margin-top:10px'>Participant-facing UI served<br />from Railway session routes.</div>"]
+      style 10 fill:#5aa05a,stroke:#3e703e,color:#ffffff
+      11["<div style='font-weight: bold'>Host SPA</div><div style='font-size: 70%; margin-top: 0px'>[Container: HTML/CSS/JavaScript]</div><div style='font-size: 80%; margin-top:10px'>Host control panel served<br />from the daemon host server<br />on localhost.</div>"]
+      style 11 fill:#5aa05a,stroke:#3e703e,color:#ffffff
+      21["<div style='font-weight: bold'>Training Daemon</div><div style='font-size: 70%; margin-top: 0px'>[Container: Python 3.12 CLI + embedded FastAPI]</div><div style='font-size: 80%; margin-top:10px'>Local source of truth for<br />host control, live state,<br />persistence, and AI-assisted<br />jobs.</div>"]
+      style 21 fill:#5aa05a,stroke:#3e703e,color:#ffffff
+    end
+
+    11-. "<div>Calls host REST and proxied<br />WebSocket APIs on localhost</div><div style='font-size: 70%'></div>" .->21
+    10-. "<div>Loads participant and notes<br />pages</div><div style='font-size: 70%'></div>" .->16
+    10-. "<div>Connects as participant</div><div style='font-size: 70%'></div>" .->15
+    10-. "<div>Reads notes and key points</div><div style='font-size: 70%'></div>" .->17
+    13-. "<div>Initializes</div><div style='font-size: 70%'></div>" .->14
+    13-. "<div>Registers</div><div style='font-size: 70%'></div>" .->15
+    13-. "<div>Registers</div><div style='font-size: 70%'></div>" .->16
+    13-. "<div>Registers</div><div style='font-size: 70%'></div>" .->17
+    15-. "<div>Reads auth, session, and<br />connection state from</div><div style='font-size: 70%'></div>" .->14
+    16-. "<div>Uses auth/session helpers<br />from</div><div style='font-size: 70%'></div>" .->14
+    17-. "<div>Reads mirrored summary state<br />from</div><div style='font-size: 70%'></div>" .->14
+
+  end

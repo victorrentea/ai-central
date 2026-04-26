@@ -1,0 +1,377 @@
+asyncapi: '2.6.0'
+info:
+  title: Training Assistant — Host WebSocket Events
+  version: '1.0'
+  description: |
+    Events received by the host panel browser over WebSocket.
+    Connection: `WS ws://localhost:1234/{session_id}/__host__`
+
+    **Host WS is receive-only.** All host actions are REST calls to the daemon.
+    Full state is fetched via `GET /api/{session_id}/host/state` on connect/reconnect.
+
+servers:
+  daemon:
+    url: ws://localhost:1234/{session_id}/__host__
+    protocol: ws
+    description: Daemon host panel WebSocket (host browser → daemon direct)
+
+channels:
+  /{session_id}/__host__:
+    subscribe:
+      summary: Events received by host browser
+      message:
+        oneOf:
+          - $ref: '#/components/messages/decks_updated'
+          - $ref: '#/components/messages/poll_queue_updated'
+          - $ref: '#/components/messages/vote_update'
+          - $ref: '#/components/messages/wordcloud_updated'
+          - $ref: '#/components/messages/qa_updated'
+          - $ref: '#/components/messages/codereview_selections_updated'
+          - $ref: '#/components/messages/emoji_reaction'
+          - $ref: '#/components/messages/paste_received'
+          - $ref: '#/components/messages/file_uploaded'
+          - $ref: '#/components/messages/participant_list_updated'
+          - $ref: '#/components/messages/notes_updated'
+          - $ref: '#/components/messages/summary_updated'
+          - $ref: '#/components/messages/talk_pdf_ready'
+          - $ref: '#/components/messages/talk_pdf_failed'
+          - $ref: '#/components/messages/reload'
+
+components:
+  messages:
+
+    decks_updated:
+      summary: Deck cache status changed — contains full cache map to avoid polling
+      x-feature: slides
+      x-doc-notes:
+        - "Compare incoming decks[slug].downloaded_at against previous value to detect content changes (re-download)."
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [decks_updated]
+          decks:
+            type: object
+            additionalProperties:
+              $ref: '#/components/schemas/Deck'
+            default: {}
+
+    # ── Poll ─────────────────────────────────────────────────────────────────
+
+    poll_queue_updated:
+      summary: Poll queue changed — host should GET /poll/queue to refresh
+      x-feature: poll
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [poll_queue_updated]
+
+    vote_update:
+      summary: Real-time vote tally while poll is open
+      x-feature: poll
+      x-doc-notes:
+        - Host-only event; participants do not receive live vote tallies.
+        - Only total voted count is sent to avoid influencing participants.
+      payload:
+        type: object
+        required: [type, voted_count]
+        properties:
+          type:
+            type: string
+            enum: [vote_update]
+          voted_count:
+            type: integer
+            description: total number of participants who have voted so far
+
+    # ── Word Cloud ────────────────────────────────────────────────────────────
+
+    wordcloud_updated:
+      summary: Word cloud updated (same payload as participant)
+      x-feature: wordcloud
+      payload:
+        type: object
+        required: [type, words, word_order, topic]
+        properties:
+          type:
+            type: string
+            enum: [wordcloud_updated]
+          words:
+            type: object
+            description: word → count
+            additionalProperties:
+              type: integer
+          word_order:
+            type: array
+            description: Words ordered newest first
+            items:
+              type: string
+          topic:
+            type: string
+
+    # ── Q&A ───────────────────────────────────────────────────────────────────
+
+    qa_updated:
+      summary: Q&A list changed (same structure as participant)
+      x-feature: qa
+      payload:
+        type: object
+        required: [type, questions]
+        properties:
+          type:
+            type: string
+            enum: [qa_updated]
+          questions:
+            type: array
+            items:
+              $ref: '#/components/schemas/QAQuestion'
+
+    # ── Code Review ───────────────────────────────────────────────────────────
+
+    codereview_selections_updated:
+      summary: Aggregated line selection counts (host-only)
+      x-feature: codereview
+      payload:
+        type: object
+        required: [type, line_counts]
+        properties:
+          type:
+            type: string
+            enum: [codereview_selections_updated]
+          line_counts:
+            type: object
+            description: line number → count of participants who selected it
+            additionalProperties:
+              type: integer
+
+    # ── Emoji ─────────────────────────────────────────────────────────────────
+
+    emoji_reaction:
+      summary: Participant sent an emoji reaction — floating animation on host screen
+      x-feature: emoji
+      payload:
+        type: object
+        required: [type, emoji]
+        properties:
+          type:
+            type: string
+            enum: [emoji_reaction]
+          emoji:
+            type: string
+            maxLength: 4
+
+    # ── Paste & File Upload ───────────────────────────────────────────────────
+
+    paste_received:
+      summary: Participant submitted a text paste
+      x-feature: paste_upload
+      payload:
+        type: object
+        required: [type, uuid, id, text]
+        properties:
+          type:
+            type: string
+            enum: [paste_received]
+          uuid:
+            type: string
+            description: Participant UUID who submitted the paste
+          id:
+            type: string
+            description: Paste ID
+          text:
+            type: string
+
+    file_uploaded:
+      summary: Participant uploaded a file (daemon has downloaded it to session folder)
+      x-feature: paste_upload
+      payload:
+        type: object
+        required: [type, uuid, id, filename, size, disk_path]
+        properties:
+          type:
+            type: string
+            enum: [file_uploaded]
+          uuid:
+            type: string
+            description: Participant UUID who uploaded the file
+          id:
+            type: string
+            description: File ID
+          filename:
+            type: string
+          size:
+            type: integer
+            description: File size in bytes
+          disk_path:
+            type: string
+            description: Absolute path on the host's disk where the file was saved by the daemon
+
+    # ── Participants ──────────────────────────────────────────────────────────
+
+    participant_list_updated:
+      summary: Participant list changed (join/register/rename/location) — sent by daemon directly
+      x-feature: identity
+      payload:
+        type: object
+        required: [type, participants]
+        properties:
+          type:
+            type: string
+            enum: [participant_list_updated]
+          participants:
+            type: array
+            items:
+              $ref: '#/components/schemas/HostParticipant'
+
+    # ── Notes & Summary ──────────────────────────────────────────────────────
+
+    notes_updated:
+      summary: Notes file changed — mtime timestamp updated
+      x-feature: notes_summary
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [notes_updated]
+          updated_at:
+            type: string
+            format: date-time
+            nullable: true
+            description: ISO timestamp of notes file mtime
+
+    summary_updated:
+      summary: AI summary file changed — mtime timestamp updated
+      x-feature: notes_summary
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [summary_updated]
+          updated_at:
+            type: string
+            format: date-time
+            nullable: true
+            description: ISO timestamp of ai-summary.md mtime
+
+    # ── Talk presentation ─────────────────────────────────────────────────────
+
+    talk_pdf_ready:
+      summary: PDF was successfully downloaded to Railway and is ready to serve
+      x-feature: slides
+      payload:
+        type: object
+        required: [type, slug]
+        properties:
+          type:
+            type: string
+            enum: [talk_pdf_ready]
+          slug:
+            type: string
+
+    talk_pdf_failed:
+      summary: PDF download from Google Drive failed — host should be notified
+      x-feature: slides
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [talk_pdf_failed]
+
+    # ── Cross-cutting ────────────────────────────────────────────────────────
+
+    reload:
+      summary: Daemon synced static files — browser should reload
+      x-feature: reload
+      x-doc-notes:
+        - Host client should trigger full page reload to pick up new static assets.
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [reload]
+
+  schemas:
+
+    Deck:
+      type: object
+      required: [status, title]
+      properties:
+        status:
+          type: string
+          enum: [not_cached, cached, downloading, download_failed]
+        size_bytes:
+          type: integer
+          nullable: true
+        downloaded_at:
+          type: string
+          format: date-time
+          nullable: true
+        modified_at:
+          type: string
+          format: date-time
+          nullable: true
+        title:
+          type: string
+        error:
+          type: string
+          nullable: true
+
+    QAQuestion:
+      type: object
+      required: [id, text, author_uuid, upvoter_uuids, answered, timestamp]
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        author_uuid:
+          type: string
+        upvoter_uuids:
+          type: array
+          items:
+            type: string
+        answered:
+          type: boolean
+        timestamp:
+          type: number
+
+    LeaderboardPosition:
+      type: object
+      required: [rank, name, score, avatar]
+      properties:
+        rank:
+          type: integer
+        name:
+          type: string
+        score:
+          type: integer
+        avatar:
+          type: string
+
+    HostParticipant:
+      type: object
+      required: [uuid, name, score, avatar]
+      properties:
+        uuid:
+          type: string
+        name:
+          type: string
+        score:
+          type: integer
+        location:
+          type: string
+          nullable: true
+        avatar:
+          type: string

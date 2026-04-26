@@ -1,0 +1,2956 @@
+openapi: 3.1.0
+info:
+  title: Daemon Host Panel
+  version: 0.1.0
+paths:
+  /api/participant/rejoin:
+    post:
+      tags:
+      - participant
+      summary: Rejoin Participant
+      description: Lookup-only identity restore for returning UUIDs in current session.
+      operationId: rejoin_participant_api_participant_rejoin_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+      x-feature: identity
+  /api/participant/register:
+    post:
+      tags:
+      - participant
+      summary: Register Participant
+      description: Register participant — assign name+avatar. Idempotent for returning
+        participants.
+      operationId: register_participant_api_participant_register_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+      x-feature: identity
+  /api/participant/name:
+    put:
+      tags:
+      - participant
+      summary: Rename Participant
+      description: Rename a registered participant. Returns 400 if not yet registered.
+      operationId: rename_participant_api_participant_name_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: identity
+  /api/participant/roll-avatar:
+    post:
+      tags:
+      - participant
+      summary: Roll Avatar Endpoint
+      description: Re-roll avatar (conference mode only).
+      operationId: roll_avatar_endpoint_api_participant_roll_avatar_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AvatarRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvatarResponse'
+      x-feature: identity
+  /api/participant/location:
+    put:
+      tags:
+      - participant
+      summary: Set Location
+      description: Store participant city/timezone.
+      operationId: set_location_api_participant_location_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocationRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: identity
+  /api/participant/state:
+    get:
+      tags:
+      - participant
+      summary: Get Participant State
+      description: Return full personalised state for a participant — used on page
+        load and WS reconnect.
+      operationId: get_participant_state_api_participant_state_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParticipantStateResponse'
+      x-feature: participant_state
+      x-doc-notes:
+      - Returns participant-personalized full state snapshot.
+  /api/participant/git-activity:
+    get:
+      tags:
+      - participant
+      summary: Get Git Activity
+      description: Return accumulated git file-open activity for the current session.
+      operationId: get_git_activity_api_participant_git_activity_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitActivityResponse'
+      x-feature: activity
+  /api/{session_id}/host/participants/resolve-locations:
+    post:
+      tags:
+      - participant
+      summary: Resolve Participant Locations
+      description: Backfill city name + timezone + country for all participants missing
+        geo metadata.
+      operationId: resolve_participant_locations_api__session_id__host_participants_resolve_locations_post
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: identity
+  /api/participant/wordcloud/word:
+    post:
+      tags:
+      - wordcloud
+      summary: Submit Word
+      description: Participant submits a word to the word cloud.
+      operationId: submit_word_api_participant_wordcloud_word_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitWordBody'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: wordcloud
+  /api/{session_id}/host/wordcloud/word:
+    post:
+      tags:
+      - wordcloud
+      summary: Host Submit Word
+      description: Host submits a word — same as participant but no scoring.
+      operationId: host_submit_word_api__session_id__host_wordcloud_word_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitWordBody'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: wordcloud
+  /api/{session_id}/host/wordcloud/topic:
+    post:
+      tags:
+      - wordcloud
+      summary: Set Topic
+      description: Host sets the word cloud topic.
+      operationId: set_topic_api__session_id__host_wordcloud_topic_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetTopicBody'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: wordcloud
+  /api/{session_id}/host/wordcloud/clear:
+    post:
+      tags:
+      - wordcloud
+      summary: Clear Wordcloud
+      description: Host clears the word cloud.
+      operationId: clear_wordcloud_api__session_id__host_wordcloud_clear_post
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: wordcloud
+  /api/participant/emoji/reaction:
+    post:
+      tags:
+      - emoji
+      summary: Emoji Reaction
+      description: Participant sends an emoji reaction.
+      operationId: emoji_reaction_api_participant_emoji_reaction_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmojiReactionRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: emoji
+  /api/participant/qa/submit:
+    post:
+      tags:
+      - qa
+      summary: Submit Question
+      description: Participant submits a Q&A question.
+      operationId: submit_question_api_participant_qa_submit_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitQuestionBody'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: qa
+  /api/participant/qa/upvote:
+    post:
+      tags:
+      - qa
+      summary: Upvote Question
+      description: Participant upvotes a Q&A question.
+      operationId: upvote_question_api_participant_qa_upvote_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpvoteQuestionBody'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: qa
+  /api/{session_id}/host/qa/submit:
+    post:
+      tags:
+      - qa
+      summary: Host Submit Question
+      description: Host submits a Q&A question — no scoring.
+      operationId: host_submit_question_api__session_id__host_qa_submit_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitQuestionBody'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: qa
+  /api/{session_id}/host/qa/question/{question_id}/text:
+    put:
+      tags:
+      - qa
+      summary: Edit Question Text
+      description: Host edits a question's text.
+      operationId: edit_question_text_api__session_id__host_qa_question__question_id__text_put
+      parameters:
+      - name: question_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Question Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditQuestionTextBody'
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: qa
+  /api/{session_id}/host/qa/question/{question_id}:
+    delete:
+      tags:
+      - qa
+      summary: Delete Question
+      description: Host deletes a question.
+      operationId: delete_question_api__session_id__host_qa_question__question_id__delete
+      parameters:
+      - name: question_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Question Id
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: qa
+  /api/{session_id}/host/qa/question/{question_id}/answered:
+    put:
+      tags:
+      - qa
+      summary: Toggle Answered
+      description: Host toggles a question's answered flag.
+      operationId: toggle_answered_api__session_id__host_qa_question__question_id__answered_put
+      parameters:
+      - name: question_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Question Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToggleAnsweredBody'
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: qa
+  /api/{session_id}/host/qa/clear:
+    post:
+      tags:
+      - qa
+      summary: Clear Qa
+      description: Host clears all Q&A questions.
+      operationId: clear_qa_api__session_id__host_qa_clear_post
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: qa
+  /api/participant/poll/vote:
+    post:
+      tags:
+      - poll
+      summary: Cast Vote
+      description: Participant casts a vote.
+      operationId: cast_vote_api_participant_poll_vote_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoteRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: poll
+      x-doc-notes:
+      - Votes are final once submitted; re-vote is rejected.
+  /api/{session_id}/host/poll/manual/submit:
+    post:
+      tags:
+      - poll
+      summary: Create Poll
+      description: Host manually creates and immediately opens a new poll.
+      operationId: create_poll_api__session_id__host_poll_manual_submit_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePollRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: poll
+  /api/{session_id}/host/poll/end:
+    post:
+      tags:
+      - poll
+      summary: End Poll
+      description: Host ends the poll.
+      operationId: end_poll_api__session_id__host_poll_end_post
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: poll
+  /api/{session_id}/host/poll/correct:
+    put:
+      tags:
+      - poll
+      summary: Reveal Correct
+      description: Host reveals correct answers and awards scores.
+      operationId: reveal_correct_api__session_id__host_poll_correct_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevealCorrectRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: poll
+  /api/{session_id}/host/poll/end/timer:
+    post:
+      tags:
+      - poll
+      summary: Start Timer
+      description: Host starts a countdown timer to end the poll.
+      operationId: start_timer_api__session_id__host_poll_end_timer_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartTimerRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: poll
+  /api/{session_id}/host/poll:
+    get:
+      tags:
+      - poll
+      summary: Get Poll State
+      description: Return full poll state for host poll tab.
+      operationId: get_poll_state_api__session_id__host_poll_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HostPollStateResponse'
+      x-feature: poll
+    delete:
+      tags:
+      - poll
+      summary: Delete Poll
+      description: Host deletes the current poll.
+      operationId: delete_poll_api__session_id__host_poll_delete
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: poll
+  /api/{session_id}/host/leaderboard/show:
+    post:
+      tags:
+      - leaderboard
+      summary: Show Leaderboard
+      operationId: show_leaderboard_api__session_id__host_leaderboard_show_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShowLeaderboardResponse'
+      x-feature: scores_leaderboard
+  /api/{session_id}/host/scores:
+    delete:
+      tags:
+      - leaderboard
+      summary: Reset Scores
+      operationId: reset_scores_api__session_id__host_scores_delete
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: scores_leaderboard
+  /api/participant/paste:
+    post:
+      tags:
+      - misc
+      summary: Paste Text
+      description: Participant pastes text to be seen by host.
+      operationId: paste_text_api_participant_paste_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasteRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: paste_upload
+  /api/participant/misc/feedback:
+    post:
+      tags:
+      - misc
+      summary: Participant Feedback
+      description: Participant feedback submitted from floating feedback modal.
+      operationId: participant_feedback_api_participant_misc_feedback_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: feedback
+  /api/participant/notes:
+    get:
+      tags:
+      - misc
+      summary: Get Notes
+      description: Get session notes content.
+      operationId: get_notes_api_participant_notes_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotesResponse'
+      x-feature: notes_summary
+  /api/participant/summary:
+    get:
+      tags:
+      - misc
+      summary: Get Summary
+      description: Get summary points and raw markdown.
+      operationId: get_summary_api_participant_summary_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SummaryResponse'
+      x-feature: notes_summary
+  /api/participant/slides/decks:
+    get:
+      tags:
+      - misc
+      summary: Get Slides Decks
+      description: Get slides cache status for all known decks; called on initial
+        page load (decks_updated WS carries full data and replaces polling).
+      operationId: get_slides_decks_api_participant_slides_decks_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecksResponse'
+      x-feature: slides
+      x-doc-notes:
+      - Returns cache status snapshot for all known decks on initial page load; decks_updated
+        WS carries full data so no re-polling needed.
+  /api/participant/slides/history:
+    get:
+      tags:
+      - misc
+      summary: Get Slides History
+      description: Return accumulated slide viewing history for the current session.
+      operationId: get_slides_history_api_participant_slides_history_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlidesHistoryResponse'
+      x-feature: slides
+  /api/participant/agenda:
+    get:
+      tags:
+      - misc
+      summary: Get Agenda
+      description: Serve the agenda .docx as base64-encoded JSON (survives WS proxy).
+      operationId: get_agenda_api_participant_agenda_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgendaResponse'
+      x-feature: notes_summary
+  /api/{session_id}/host/pastes:
+    get:
+      tags:
+      - misc
+      summary: Get Pastes
+      description: Return all pending paste entries grouped by participant uuid.
+      operationId: get_pastes_api__session_id__host_pastes_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PastsResponse'
+      x-feature: paste_upload
+  /api/{session_id}/host/notes:
+    get:
+      tags:
+      - misc
+      summary: Get Host Notes
+      description: Return current session notes content.
+      operationId: get_host_notes_api__session_id__host_notes_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotesResponse'
+      x-feature: notes_summary
+  /api/{session_id}/host/summary:
+    get:
+      tags:
+      - misc
+      summary: Get Host Summary
+      description: Return summary points, raw markdown, and updated_at timestamp.
+      operationId: get_host_summary_api__session_id__host_summary_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SummaryResponse'
+      x-feature: notes_summary
+  /api/{session_id}/host/uploads/seen:
+    post:
+      tags:
+      - misc
+      summary: Mark Uploaded File Seen
+      description: Mark an uploaded-file indicator as seen by host in daemon session
+        state.
+      operationId: mark_uploaded_file_seen_api__session_id__host_uploads_seen_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadSeenRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: paste_upload
+  /api/{session_id}/host/slides-compilation:
+    get:
+      tags:
+      - misc
+      summary: Get Slides Compilation
+      description: 'Compile all viewed slide pages into one PDF and return as a download.
+
+
+        Long-running: may trigger Railway to download PDFs from Google Drive first.
+
+        Progress is logged to the daemon log.'
+      operationId: get_slides_compilation_api__session_id__host_slides_compilation_get
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      x-feature: slides
+  /api/{session_id}/host/poll/queue:
+    post:
+      tags:
+      - poll
+      summary: Submit Questions
+      description: Replace the entire poll queue with the submitted questions.
+      operationId: submit_questions_api__session_id__host_poll_queue_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitQuestionsRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: poll
+    delete:
+      tags:
+      - poll
+      summary: Clear Queue
+      description: Clear the entire quiz queue.
+      operationId: clear_queue_api__session_id__host_poll_queue_delete
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: poll
+  /api/{session_id}/host/poll/queue/{index}:
+    delete:
+      tags:
+      - poll
+      summary: Remove From Queue
+      description: Remove the question at the given 0-based index from the queue.
+      operationId: remove_from_queue_api__session_id__host_poll_queue__index__delete
+      parameters:
+      - name: index
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Index
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: poll
+  /api/participant/codereview/selection:
+    put:
+      tags:
+      - codereview
+      summary: Update Selection
+      description: Participant sets their selected lines (full replacement).
+      operationId: update_selection_api_participant_codereview_selection_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectionRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: codereview
+  /api/{session_id}/host/codereview:
+    post:
+      tags:
+      - codereview
+      summary: Create Codereview
+      description: Host creates a code review session.
+      operationId: create_codereview_api__session_id__host_codereview_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCodeReviewRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: codereview
+    delete:
+      tags:
+      - codereview
+      summary: Clear Codereview
+      description: Host clears the code review.
+      operationId: clear_codereview_api__session_id__host_codereview_delete
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: codereview
+  /api/{session_id}/host/codereview/status:
+    put:
+      tags:
+      - codereview
+      summary: Set Codereview Status
+      description: Host closes the selection phase.
+      operationId: set_codereview_status_api__session_id__host_codereview_status_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetCodeReviewStatusRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkWithPhaseResponse'
+      x-feature: codereview
+  /api/{session_id}/host/codereview/confirm-line:
+    put:
+      tags:
+      - codereview
+      summary: Confirm Line
+      description: Host confirms a line as problematic and awards points.
+      operationId: confirm_line_api__session_id__host_codereview_confirm_line_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmLineRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfirmLineResponse'
+      x-feature: codereview
+  /api/{session_id}/host/activity:
+    put:
+      tags:
+      - activity
+      summary: Set Activity
+      description: Host switches the current activity.
+      operationId: set_activity_api__session_id__host_activity_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetActivityRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetActivityResponse'
+      x-feature: activity
+    post:
+      tags:
+      - activity
+      summary: Set Activity
+      description: Host switches the current activity.
+      operationId: set_activity_api__session_id__host_activity_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetActivityRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetActivityResponse'
+      x-feature: activity
+  /api/participant/debate/pick-side:
+    post:
+      tags:
+      - debate
+      summary: Pick Side
+      description: Participant picks a side (for/against).
+      operationId: pick_side_api_participant_debate_pick_side_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PickSideRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: debate
+  /api/participant/debate/argument:
+    post:
+      tags:
+      - debate
+      summary: Submit Argument
+      description: Participant submits a debate argument.
+      operationId: submit_argument_api_participant_debate_argument_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArgumentRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: debate
+  /api/participant/debate/upvote:
+    post:
+      tags:
+      - debate
+      summary: Upvote Argument
+      description: Participant upvotes a debate argument.
+      operationId: upvote_argument_api_participant_debate_upvote_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpvoteRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: debate
+  /api/participant/debate/volunteer:
+    post:
+      tags:
+      - debate
+      summary: Volunteer Champion
+      description: Participant volunteers as champion for their side.
+      operationId: volunteer_champion_api_participant_debate_volunteer_post
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: debate
+  /api/{session_id}/host/debate:
+    post:
+      tags:
+      - debate
+      summary: Launch Debate
+      description: Host launches a debate with a statement.
+      operationId: launch_debate_api__session_id__host_debate_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LaunchDebateRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: debate
+  /api/{session_id}/host/debate/reset:
+    post:
+      tags:
+      - debate
+      summary: Reset Debate
+      description: Host resets all debate state.
+      operationId: reset_debate_api__session_id__host_debate_reset_post
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: debate
+  /api/{session_id}/host/debate/close-selection:
+    post:
+      tags:
+      - debate
+      summary: Close Selection
+      description: Host closes side selection; auto-assigns remaining participants.
+      operationId: close_selection_api__session_id__host_debate_close_selection_post
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: debate
+  /api/{session_id}/host/debate/force-assign:
+    post:
+      tags:
+      - debate
+      summary: Force Assign
+      description: Host force-assigns all unassigned participants.
+      operationId: force_assign_api__session_id__host_debate_force_assign_post
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: debate
+  /api/{session_id}/host/debate/phase:
+    post:
+      tags:
+      - debate
+      summary: Advance Phase
+      description: Host advances the debate to a specific phase.
+      operationId: advance_phase_api__session_id__host_debate_phase_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdvancePhaseRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkPhaseResponse'
+      x-feature: debate
+  /api/{session_id}/host/debate/first-side:
+    post:
+      tags:
+      - debate
+      summary: Set First Side
+      description: Host picks which side speaks first in live debate.
+      operationId: set_first_side_api__session_id__host_debate_first_side_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetFirstSideRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: debate
+  /api/{session_id}/host/debate/round-timer:
+    post:
+      tags:
+      - debate
+      summary: Start Round Timer
+      description: Host starts a timed round.
+      operationId: start_round_timer_api__session_id__host_debate_round_timer_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoundTimerRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: debate
+  /api/{session_id}/host/debate/end-round:
+    post:
+      tags:
+      - debate
+      summary: End Round
+      description: Host ends the current round early.
+      operationId: end_round_api__session_id__host_debate_end_round_post
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: debate
+  /api/{session_id}/host/debate/end-arguments:
+    post:
+      tags:
+      - debate
+      summary: End Arguments
+      description: Host ends arguments phase; triggers AI cleanup in background.
+      operationId: end_arguments_api__session_id__host_debate_end_arguments_post
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: debate
+  /api/{session_id}/host/debate/ai-result:
+    post:
+      tags:
+      - debate
+      summary: Receive Ai Result
+      description: Manual/skip AI result — host posts AI cleanup results directly.
+      operationId: receive_ai_result_api__session_id__host_debate_ai_result_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiResultRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: debate
+  /api/{session_id}/host/state:
+    get:
+      tags:
+      - host-state
+      summary: Get Host State
+      description: Return full state for host page load — replicates Railway build_for_host().
+      operationId: get_host_state_api__session_id__host_state_get
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HostStateResponse'
+      x-feature: host_state
+      x-doc-notes:
+      - Returns host-facing full state snapshot.
+  /api/session/create:
+    post:
+      tags:
+      - session
+      summary: Start Session
+      description: Host starts a new session (creates folder, assigns session_id,
+        clean slate).
+      operationId: start_session_api_session_create_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartSessionRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionStartResponse'
+      x-feature: session_management
+  /api/session/end:
+    post:
+      tags:
+      - session
+      summary: End Session
+      description: Host ends the current session. Railway closes WS connections on
+        session end.
+      operationId: end_session_api_session_end_post
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: session_management
+  /api/session/resume:
+    post:
+      tags:
+      - session
+      summary: Resume Session
+      description: Host resumes an existing session folder. Uses session-state.json
+        as persisted storage.
+      operationId: resume_session_api_session_resume_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResumeSessionRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionStartResponse'
+      x-feature: session_management
+  /api/session/folders:
+    get:
+      tags:
+      - session
+      summary: List Session Folders
+      description: List available session folders.
+      operationId: list_session_folders_api_session_folders_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionFoldersResponse'
+      x-feature: session_management
+  /api/session/talk-presentation-path:
+    post:
+      tags:
+      - session
+      summary: Talk Presentation Path
+      description: Host drops a PPTX file during a talk — resolve GDrive URL, trigger
+        Railway download, push current_slide_updated.
+      operationId: talk_presentation_path_api_session_talk_presentation_path_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TalkPresentationPathRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: session_management
+  /api/session/active:
+    get:
+      tags:
+      - session
+      summary: Get Session Active
+      description: 'Public endpoint: returns the active session_id or null.'
+      operationId: get_session_active_api_session_active_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionActiveResponse'
+      x-feature: session_management
+  /api/daemon-status:
+    get:
+      summary: Daemon Status
+      operationId: daemon_status_api_daemon_status_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DaemonStatusResponse'
+      x-feature: session_management
+  /api/log-level:
+    get:
+      summary: Get Log Level
+      operationId: get_log_level_api_log_level_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogLevelResponse'
+      x-feature: session_management
+    post:
+      summary: Set Log Level
+      operationId: set_log_level_api_log_level_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetLogLevelRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+      x-feature: session_management
+components:
+  schemas:
+    AdvancePhaseRequest:
+      properties:
+        phase:
+          type: string
+          title: Phase
+      type: object
+      required:
+      - phase
+      title: AdvancePhaseRequest
+    AgendaResponse:
+      properties:
+        data:
+          type: string
+          title: Data
+        filename:
+          type: string
+          title: Filename
+      type: object
+      required:
+      - data
+      - filename
+      title: AgendaResponse
+    AiResultRequest:
+      properties:
+        merges:
+          items:
+            $ref: '#/components/schemas/DebateAiMerge'
+          type: array
+          title: Merges
+          default: []
+        cleaned:
+          items:
+            $ref: '#/components/schemas/DebateAiCleaned'
+          type: array
+          title: Cleaned
+          default: []
+        new_arguments:
+          items:
+            $ref: '#/components/schemas/DebateAiNewArgument'
+          type: array
+          title: New Arguments
+          default: []
+      type: object
+      title: AiResultRequest
+    ArgumentRequest:
+      properties:
+        text:
+          type: string
+          title: Text
+      type: object
+      required:
+      - text
+      title: ArgumentRequest
+    AvatarRequest:
+      properties:
+        rejected:
+          items:
+            type: string
+          type: array
+          title: Rejected
+          default: []
+      type: object
+      title: AvatarRequest
+    AvatarResponse:
+      properties:
+        avatar:
+          type: string
+          title: Avatar
+      type: object
+      required:
+      - avatar
+      title: AvatarResponse
+    CodeReviewParticipantState:
+      properties:
+        snippet:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Snippet
+        language:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Language
+        phase:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Phase
+        confirmed_lines:
+          items:
+            type: integer
+          type: array
+          title: Confirmed Lines
+          default: []
+        my_selections:
+          items:
+            type: integer
+          type: array
+          title: My Selections
+          default: []
+        line_percentages:
+          anyOf:
+          - additionalProperties:
+              type: integer
+            type: object
+          - type: 'null'
+          title: Line Percentages
+      type: object
+      title: CodeReviewParticipantState
+    ConfirmLineRequest:
+      properties:
+        line:
+          type: integer
+          title: Line
+      type: object
+      required:
+      - line
+      title: ConfirmLineRequest
+    ConfirmLineResponse:
+      properties:
+        ok:
+          type: boolean
+          title: Ok
+          default: true
+        confirmed_line:
+          type: integer
+          title: Confirmed Line
+      type: object
+      required:
+      - confirmed_line
+      title: ConfirmLineResponse
+    CreateCodeReviewRequest:
+      properties:
+        snippet:
+          type: string
+          title: Snippet
+        language:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Language
+        smart_paste:
+          type: boolean
+          title: Smart Paste
+          default: true
+      type: object
+      required:
+      - snippet
+      title: CreateCodeReviewRequest
+    CreatePollRequest:
+      properties:
+        question:
+          type: string
+          title: Question
+        options:
+          items:
+            type: string
+          type: array
+          title: Options
+        multi:
+          type: boolean
+          title: Multi
+        correct_count:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Correct Count
+      type: object
+      required:
+      - question
+      - options
+      - multi
+      title: CreatePollRequest
+    CurrentSlide:
+      properties:
+        slug:
+          type: string
+          title: Slug
+        page:
+          type: integer
+          title: Page
+      type: object
+      required:
+      - slug
+      - page
+      title: CurrentSlide
+    DaemonStatusResponse:
+      properties:
+        code_timestamp:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Code Timestamp
+      type: object
+      required:
+      - code_timestamp
+      title: DaemonStatusResponse
+    DebateAiCleaned:
+      properties:
+        id:
+          type: string
+          title: Id
+        text:
+          type: string
+          title: Text
+      type: object
+      required:
+      - id
+      - text
+      title: DebateAiCleaned
+    DebateAiMerge:
+      properties:
+        keep_id:
+          type: string
+          title: Keep Id
+        remove_ids:
+          items:
+            type: string
+          type: array
+          title: Remove Ids
+          default: []
+      type: object
+      required:
+      - keep_id
+      title: DebateAiMerge
+    DebateAiNewArgument:
+      properties:
+        side:
+          type: string
+          title: Side
+        text:
+          type: string
+          title: Text
+      type: object
+      required:
+      - side
+      - text
+      title: DebateAiNewArgument
+    DebateArgumentHost:
+      properties:
+        id:
+          type: string
+          title: Id
+        author_uuid:
+          type: string
+          title: Author Uuid
+        side:
+          type: string
+          title: Side
+        text:
+          type: string
+          title: Text
+        upvoters:
+          items:
+            type: string
+          type: array
+          title: Upvoters
+        ai_generated:
+          type: boolean
+          title: Ai Generated
+        merged_into:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Merged Into
+      type: object
+      required:
+      - id
+      - author_uuid
+      - side
+      - text
+      - upvoters
+      - ai_generated
+      title: DebateArgumentHost
+    DebateArgumentParticipant:
+      properties:
+        id:
+          type: string
+          title: Id
+        author_uuid:
+          type: string
+          title: Author Uuid
+        side:
+          type: string
+          title: Side
+        text:
+          type: string
+          title: Text
+        upvoters:
+          items:
+            type: string
+          type: array
+          title: Upvoters
+        ai_generated:
+          type: boolean
+          title: Ai Generated
+        merged_into:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Merged Into
+        is_own:
+          type: boolean
+          title: Is Own
+        has_upvoted:
+          type: boolean
+          title: Has Upvoted
+      type: object
+      required:
+      - id
+      - author_uuid
+      - side
+      - text
+      - upvoters
+      - ai_generated
+      - is_own
+      - has_upvoted
+      title: DebateArgumentParticipant
+    DebateData:
+      properties:
+        statement:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Statement
+        phase:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Phase
+        my_side:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: My Side
+        my_is_champion:
+          type: boolean
+          title: My Is Champion
+        side_counts:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Side Counts
+        arguments:
+          items:
+            $ref: '#/components/schemas/DebateArgumentParticipant'
+          type: array
+          title: Arguments
+        champions:
+          additionalProperties:
+            type: string
+          type: object
+          title: Champions
+        auto_assigned:
+          items:
+            type: string
+          type: array
+          title: Auto Assigned
+        first_side:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: First Side
+        round_index:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Round Index
+        round_timer_seconds:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Round Timer Seconds
+        round_timer_started_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Round Timer Started At
+      type: object
+      required:
+      - my_is_champion
+      - side_counts
+      - arguments
+      - champions
+      - auto_assigned
+      title: DebateData
+    Deck:
+      properties:
+        status:
+          $ref: '#/components/schemas/SlideCacheStatus'
+        size_bytes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Size Bytes
+        downloaded_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Downloaded At
+        modified_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Modified At
+        title:
+          type: string
+          title: Title
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+      type: object
+      required:
+      - status
+      - title
+      title: Deck
+    DecksResponse:
+      properties:
+        decks:
+          additionalProperties:
+            $ref: '#/components/schemas/Deck'
+          type: object
+          title: Decks
+          default: {}
+      type: object
+      title: DecksResponse
+    EditQuestionTextBody:
+      properties:
+        text:
+          type: string
+          title: Text
+      type: object
+      required:
+      - text
+      title: EditQuestionTextBody
+    EmojiReactionRequest:
+      properties:
+        emoji:
+          type: string
+          title: Emoji
+      type: object
+      required:
+      - emoji
+      title: EmojiReactionRequest
+    FeedbackRequest:
+      properties:
+        text:
+          type: string
+          title: Text
+        participant_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Participant Name
+      type: object
+      required:
+      - text
+      title: FeedbackRequest
+    FolderInfo:
+      properties:
+        name:
+          type: string
+          title: Name
+        session_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Type
+      type: object
+      required:
+      - name
+      title: FolderInfo
+    GitActivityResponse:
+      properties:
+        git_repos:
+          items:
+            $ref: '#/components/schemas/GitRepoActivity'
+          type: array
+          title: Git Repos
+      type: object
+      required:
+      - git_repos
+      title: GitActivityResponse
+    GitRepoActivity:
+      properties:
+        url:
+          type: string
+          title: Url
+        branch:
+          type: string
+          title: Branch
+        files:
+          items:
+            type: string
+          type: array
+          title: Files
+          default: []
+        file_urls:
+          additionalProperties:
+            type: string
+          type: object
+          title: File Urls
+          default: {}
+      type: object
+      required:
+      - url
+      - branch
+      title: GitRepoActivity
+    HostCodeReviewState:
+      properties:
+        snippet:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Snippet
+        language:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Language
+        phase:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Phase
+        confirmed_lines:
+          items:
+            type: integer
+          type: array
+          title: Confirmed Lines
+          default: []
+        selections:
+          additionalProperties:
+            items:
+              type: integer
+            type: array
+          type: object
+          title: Selections
+          default: {}
+        line_percentages:
+          anyOf:
+          - additionalProperties:
+              type: integer
+            type: object
+          - type: 'null'
+          title: Line Percentages
+        line_counts:
+          anyOf:
+          - additionalProperties:
+              type: integer
+            type: object
+          - type: 'null'
+          title: Line Counts
+      type: object
+      title: HostCodeReviewState
+    HostParticipant:
+      properties:
+        uuid:
+          type: string
+          title: Uuid
+        name:
+          type: string
+          title: Name
+        score:
+          type: integer
+          title: Score
+        location:
+          type: string
+          title: Location
+        location_tz:
+          type: string
+          title: Location Tz
+          default: ''
+        location_country:
+          type: string
+          title: Location Country
+          default: ''
+        avatar:
+          type: string
+          title: Avatar
+        paste_texts:
+          items:
+            $ref: '#/components/schemas/PasteEntry'
+          type: array
+          title: Paste Texts
+          default: []
+        received_files:
+          items:
+            $ref: '#/components/schemas/UploadedFileEntry'
+          type: array
+          title: Received Files
+          default: []
+      type: object
+      required:
+      - uuid
+      - name
+      - score
+      - location
+      - avatar
+      title: HostParticipant
+    HostPollStateResponse:
+      properties:
+        id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Id
+        question:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Question
+        options:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Options
+        multi:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Multi
+        correct_count:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Correct Count
+        end_timer_seconds:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: End Timer Seconds
+        end_timer_started_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: End Timer Started At
+        correct_indices:
+          anyOf:
+          - items:
+              type: integer
+            type: array
+          - type: 'null'
+          title: Correct Indices
+        poll_running:
+          type: boolean
+          title: Poll Running
+        votes:
+          additionalProperties:
+            $ref: '#/components/schemas/HostPollVote'
+          type: object
+          title: Votes
+        queue:
+          $ref: '#/components/schemas/PollQueueStatus'
+      type: object
+      required:
+      - poll_running
+      - votes
+      - queue
+      title: HostPollStateResponse
+    HostPollVote:
+      properties:
+        option_indices:
+          items:
+            type: integer
+          type: array
+          title: Option Indices
+        voted_at:
+          type: string
+          title: Voted At
+      type: object
+      required:
+      - option_indices
+      - voted_at
+      title: HostPollVote
+    HostQAQuestion:
+      properties:
+        id:
+          type: string
+          title: Id
+        text:
+          type: string
+          title: Text
+        author:
+          type: string
+          title: Author
+        author_uuid:
+          type: string
+          title: Author Uuid
+        author_avatar:
+          type: string
+          title: Author Avatar
+        upvote_count:
+          type: integer
+          title: Upvote Count
+        upvoters:
+          items:
+            type: string
+          type: array
+          title: Upvoters
+        answered:
+          type: boolean
+          title: Answered
+        timestamp:
+          type: number
+          title: Timestamp
+      type: object
+      required:
+      - id
+      - text
+      - author
+      - author_uuid
+      - author_avatar
+      - upvote_count
+      - upvoters
+      - answered
+      - timestamp
+      title: HostQAQuestion
+    HostStateResponse:
+      properties:
+        type:
+          type: string
+          const: state
+          title: Type
+          default: state
+        mode:
+          type: string
+          title: Mode
+        current_activity:
+          type: string
+          title: Current Activity
+        participant_count:
+          type: integer
+          title: Participant Count
+        participants:
+          items:
+            $ref: '#/components/schemas/HostParticipant'
+          type: array
+          title: Participants
+        daemon_connected:
+          type: boolean
+          title: Daemon Connected
+        railway_connected:
+          type: boolean
+          title: Railway Connected
+        overlay_connected:
+          type: boolean
+          title: Overlay Connected
+        gdrive_running:
+          type: boolean
+          title: Gdrive Running
+        wordcloud_words:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Wordcloud Words
+        wordcloud_word_order:
+          items:
+            type: string
+          type: array
+          title: Wordcloud Word Order
+        wordcloud_topic:
+          type: string
+          title: Wordcloud Topic
+        qa_questions:
+          items:
+            $ref: '#/components/schemas/HostQAQuestion'
+          type: array
+          title: Qa Questions
+        codereview:
+          $ref: '#/components/schemas/HostCodeReviewState'
+        debate_statement:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Debate Statement
+        debate_phase:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Debate Phase
+        debate_side_counts:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Debate Side Counts
+        debate_sides:
+          additionalProperties:
+            type: string
+          type: object
+          title: Debate Sides
+        debate_arguments:
+          items:
+            $ref: '#/components/schemas/DebateArgumentHost'
+          type: array
+          title: Debate Arguments
+        debate_champions:
+          additionalProperties:
+            type: string
+          type: object
+          title: Debate Champions
+        debate_auto_assigned:
+          items:
+            type: string
+          type: array
+          title: Debate Auto Assigned
+        debate_first_side:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Debate First Side
+        debate_round_index:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Debate Round Index
+        debate_round_timer_seconds:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Debate Round Timer Seconds
+        debate_round_timer_started_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Debate Round Timer Started At
+        talk_presentation_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Talk Presentation Name
+        talk_presentation_slug:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Talk Presentation Slug
+        slides_log_deep_count:
+          type: integer
+          title: Slides Log Deep Count
+        slides_log_topic:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Slides Log Topic
+        git_repos:
+          items:
+            $ref: '#/components/schemas/GitRepoActivity'
+          type: array
+          title: Git Repos
+          default: []
+        git_repos_count:
+          type: integer
+          title: Git Repos Count
+          default: 0
+        session_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Id
+        join_base_url:
+          type: string
+          title: Join Base Url
+        daemon_session_folder:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Daemon Session Folder
+        daemon_session_notes:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Daemon Session Notes
+        session_type:
+          type: string
+          title: Session Type
+          default: workshop
+        notes_updated_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Notes Updated At
+        summary_updated_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Summary Updated At
+        transcript_line_count:
+          type: integer
+          title: Transcript Line Count
+        transcript_total_lines:
+          type: integer
+          title: Transcript Total Lines
+        transcript_latest_ts:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Transcript Latest Ts
+      type: object
+      required:
+      - mode
+      - current_activity
+      - participant_count
+      - participants
+      - daemon_connected
+      - railway_connected
+      - overlay_connected
+      - gdrive_running
+      - wordcloud_words
+      - wordcloud_word_order
+      - wordcloud_topic
+      - qa_questions
+      - codereview
+      - debate_side_counts
+      - debate_sides
+      - debate_arguments
+      - debate_champions
+      - debate_auto_assigned
+      - slides_log_deep_count
+      - join_base_url
+      - transcript_line_count
+      - transcript_total_lines
+      title: HostStateResponse
+    LaunchDebateRequest:
+      properties:
+        statement:
+          type: string
+          title: Statement
+      type: object
+      required:
+      - statement
+      title: LaunchDebateRequest
+    LeaderboardPosition:
+      properties:
+        rank:
+          type: integer
+          title: Rank
+        name:
+          type: string
+          title: Name
+        score:
+          type: integer
+          title: Score
+      type: object
+      required:
+      - rank
+      - name
+      - score
+      title: LeaderboardPosition
+    LocationRequest:
+      properties:
+        location:
+          type: string
+          title: Location
+      type: object
+      required:
+      - location
+      title: LocationRequest
+    LogLevelResponse:
+      properties:
+        level:
+          type: string
+          enum:
+          - info
+          - debug
+          title: Level
+      type: object
+      required:
+      - level
+      title: LogLevelResponse
+    NotesResponse:
+      properties:
+        notes_content:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Notes Content
+      type: object
+      title: NotesResponse
+    OkPhaseResponse:
+      properties:
+        ok:
+          type: boolean
+          title: Ok
+          default: true
+        phase:
+          type: string
+          title: Phase
+      type: object
+      required:
+      - phase
+      title: OkPhaseResponse
+    OkWithPhaseResponse:
+      properties:
+        ok:
+          type: boolean
+          title: Ok
+          default: true
+        phase:
+          type: string
+          title: Phase
+      type: object
+      required:
+      - phase
+      title: OkWithPhaseResponse
+    ParticipantStateResponse:
+      properties:
+        mode:
+          type: string
+          title: Mode
+        my_score:
+          type: integer
+          title: My Score
+        my_name:
+          type: string
+          title: My Name
+        my_avatar:
+          type: string
+          title: My Avatar
+        current_activity:
+          type: string
+          title: Current Activity
+        session_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Name
+        wordcloud:
+          $ref: '#/components/schemas/WordcloudData'
+        qa_questions:
+          items:
+            $ref: '#/components/schemas/QAQuestionRaw'
+          type: array
+          title: Qa Questions
+        poll:
+          anyOf:
+          - $ref: '#/components/schemas/PollData'
+          - type: 'null'
+        poll_active:
+          type: boolean
+          title: Poll Active
+        my_voted_indices:
+          anyOf:
+          - items:
+              type: integer
+            type: array
+          - type: 'null'
+          title: My Voted Indices
+        poll_correct_indices:
+          anyOf:
+          - items:
+              type: integer
+            type: array
+          - type: 'null'
+          title: Poll Correct Indices
+        codereview:
+          $ref: '#/components/schemas/CodeReviewParticipantState'
+        debate:
+          $ref: '#/components/schemas/DebateData'
+        slides_current:
+          anyOf:
+          - $ref: '#/components/schemas/CurrentSlide'
+          - type: 'null'
+        talk_presentation_slug:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Talk Presentation Slug
+        notes_updated_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Notes Updated At
+        summary_updated_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Summary Updated At
+        slides_history_count:
+          type: integer
+          title: Slides History Count
+        gdrive_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Gdrive Url
+        has_agenda:
+          type: boolean
+          title: Has Agenda
+          default: false
+      type: object
+      required:
+      - mode
+      - my_score
+      - my_name
+      - my_avatar
+      - current_activity
+      - wordcloud
+      - qa_questions
+      - poll_active
+      - codereview
+      - debate
+      - slides_history_count
+      title: ParticipantStateResponse
+    PasteEntry:
+      properties:
+        id:
+          type: string
+          title: Id
+        text:
+          type: string
+          title: Text
+      type: object
+      required:
+      - id
+      - text
+      title: PasteEntry
+    PasteRequest:
+      properties:
+        text:
+          type: string
+          title: Text
+      type: object
+      required:
+      - text
+      title: PasteRequest
+    PastsResponse:
+      properties:
+        pastes:
+          additionalProperties:
+            items:
+              $ref: '#/components/schemas/PasteEntry'
+            type: array
+          type: object
+          title: Pastes
+          default: {}
+      type: object
+      title: PastsResponse
+    PickSideRequest:
+      properties:
+        side:
+          type: string
+          title: Side
+      type: object
+      required:
+      - side
+      title: PickSideRequest
+    PollData:
+      properties:
+        id:
+          type: string
+          title: Id
+        question:
+          type: string
+          title: Question
+        options:
+          items:
+            type: string
+          type: array
+          title: Options
+        multi:
+          type: boolean
+          title: Multi
+        correct_count:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Correct Count
+        end_timer_seconds:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: End Timer Seconds
+        end_timer_started_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: End Timer Started At
+        correct_indices:
+          anyOf:
+          - items:
+              type: integer
+            type: array
+          - type: 'null'
+          title: Correct Indices
+      type: object
+      required:
+      - id
+      - question
+      - options
+      - multi
+      title: PollData
+    PollQueueQuestion:
+      properties:
+        question:
+          type: string
+          title: Question
+        options:
+          items:
+            type: string
+          type: array
+          title: Options
+        correct_indices:
+          items:
+            type: integer
+          type: array
+          title: Correct Indices
+      type: object
+      required:
+      - question
+      - options
+      - correct_indices
+      title: PollQueueQuestion
+    PollQueueStatus:
+      properties:
+        pending:
+          type: integer
+          title: Pending
+        items:
+          items:
+            $ref: '#/components/schemas/QueuedQuestion'
+          type: array
+          title: Items
+        current:
+          anyOf:
+          - $ref: '#/components/schemas/QueuedQuestion'
+          - type: 'null'
+      type: object
+      required:
+      - pending
+      - items
+      title: PollQueueStatus
+    PptxUpdateDetectedRequest:
+      properties:
+        slug:
+          type: string
+          title: Slug
+      type: object
+      required:
+      - slug
+      title: PptxUpdateDetectedRequest
+    QAQuestionRaw:
+      properties:
+        id:
+          type: string
+          title: Id
+        text:
+          type: string
+          title: Text
+        author_uuid:
+          type: string
+          title: Author Uuid
+        upvoter_uuids:
+          items:
+            type: string
+          type: array
+          title: Upvoter Uuids
+        answered:
+          type: boolean
+          title: Answered
+        timestamp:
+          type: number
+          title: Timestamp
+      type: object
+      required:
+      - id
+      - text
+      - author_uuid
+      - upvoter_uuids
+      - answered
+      - timestamp
+      title: QAQuestionRaw
+    QueuedQuestion:
+      properties:
+        question:
+          type: string
+          title: Question
+        options:
+          items:
+            type: string
+          type: array
+          title: Options
+        correct_indices:
+          items:
+            type: integer
+          type: array
+          title: Correct Indices
+      type: object
+      required:
+      - question
+      - options
+      - correct_indices
+      title: QueuedQuestion
+    RegisterRequest:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        location:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Location
+      type: object
+      title: RegisterRequest
+    RegisterResponse:
+      properties:
+        name:
+          type: string
+          title: Name
+        avatar:
+          type: string
+          title: Avatar
+      type: object
+      required:
+      - name
+      - avatar
+      title: RegisterResponse
+    RenameRequest:
+      properties:
+        name:
+          type: string
+          title: Name
+      type: object
+      required:
+      - name
+      title: RenameRequest
+    ResumeSessionRequest:
+      properties:
+        folder:
+          type: string
+          title: Folder
+      type: object
+      required:
+      - folder
+      title: ResumeSessionRequest
+    RevealCorrectRequest:
+      properties:
+        correct_indices:
+          items:
+            type: integer
+          type: array
+          title: Correct Indices
+      type: object
+      required:
+      - correct_indices
+      title: RevealCorrectRequest
+    RoundTimerRequest:
+      properties:
+        round_index:
+          type: integer
+          title: Round Index
+        seconds:
+          type: integer
+          title: Seconds
+      type: object
+      required:
+      - round_index
+      - seconds
+      title: RoundTimerRequest
+    SelectionRequest:
+      properties:
+        lines:
+          items:
+            type: integer
+          type: array
+          title: Lines
+          default: []
+      type: object
+      title: SelectionRequest
+    SessionActiveResponse:
+      properties:
+        session_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Id
+      type: object
+      required:
+      - session_id
+      title: SessionActiveResponse
+    SessionFoldersResponse:
+      properties:
+        folders:
+          items:
+            $ref: '#/components/schemas/FolderInfo'
+          type: array
+          title: Folders
+      type: object
+      required:
+      - folders
+      title: SessionFoldersResponse
+    SessionStartResponse:
+      properties:
+        session_name:
+          type: string
+          title: Session Name
+        session_id:
+          type: string
+          title: Session Id
+      type: object
+      required:
+      - session_name
+      - session_id
+      title: SessionStartResponse
+    SetActivityRequest:
+      properties:
+        activity:
+          type: string
+          title: Activity
+      type: object
+      required:
+      - activity
+      title: SetActivityRequest
+    SetActivityResponse:
+      properties:
+        ok:
+          type: boolean
+          title: Ok
+          default: true
+        current_activity:
+          type: string
+          title: Current Activity
+      type: object
+      required:
+      - current_activity
+      title: SetActivityResponse
+    SetCodeReviewStatusRequest:
+      properties:
+        open:
+          type: boolean
+          title: Open
+          default: true
+      type: object
+      title: SetCodeReviewStatusRequest
+    SetFirstSideRequest:
+      properties:
+        side:
+          type: string
+          title: Side
+      type: object
+      required:
+      - side
+      title: SetFirstSideRequest
+    SetLogLevelRequest:
+      properties:
+        level:
+          type: string
+          enum:
+          - info
+          - debug
+          title: Level
+      type: object
+      required:
+      - level
+      title: SetLogLevelRequest
+    SetTopicBody:
+      properties:
+        topic:
+          type: string
+          title: Topic
+      type: object
+      required:
+      - topic
+      title: SetTopicBody
+    ShowLeaderboardResponse:
+      properties:
+        entries:
+          items:
+            $ref: '#/components/schemas/LeaderboardPosition'
+          type: array
+          title: Entries
+      type: object
+      required:
+      - entries
+      title: ShowLeaderboardResponse
+    SlideCacheStatus:
+      type: string
+      enum:
+      - not_cached
+      - cached
+      - downloading
+      - download_failed
+      title: SlideCacheStatus
+    SlidesCheckResponse:
+      properties:
+        status:
+          type: string
+          title: Status
+      type: object
+      required:
+      - status
+      title: SlidesCheckResponse
+    SlidesHistoryResponse:
+      properties:
+        slides_log:
+          items:
+            $ref: '#/components/schemas/SlidesLogEntry'
+          type: array
+          title: Slides Log
+      type: object
+      required:
+      - slides_log
+      title: SlidesHistoryResponse
+    SlidesLogEntry:
+      properties:
+        slug:
+          type: string
+          title: Slug
+        slide:
+          type: integer
+          title: Slide
+        seconds_spent:
+          type: number
+          title: Seconds Spent
+        last_seen_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Seen At
+      type: object
+      required:
+      - slug
+      - slide
+      - seconds_spent
+      title: SlidesLogEntry
+    StartSessionRequest:
+      properties:
+        name:
+          type: string
+          title: Name
+        type:
+          type: string
+          enum:
+          - workshop
+          - talk
+          title: Type
+      type: object
+      required:
+      - name
+      - type
+      title: StartSessionRequest
+    StartTimerRequest:
+      properties:
+        seconds:
+          type: integer
+          title: Seconds
+          default: 30
+      type: object
+      title: StartTimerRequest
+    SubmitQuestionBody:
+      properties:
+        text:
+          type: string
+          title: Text
+      type: object
+      required:
+      - text
+      title: SubmitQuestionBody
+    SubmitQuestionsRequest:
+      properties:
+        questions:
+          items:
+            $ref: '#/components/schemas/PollQueueQuestion'
+          type: array
+          title: Questions
+      type: object
+      required:
+      - questions
+      title: SubmitQuestionsRequest
+    SubmitWordBody:
+      properties:
+        word:
+          type: string
+          title: Word
+      type: object
+      required:
+      - word
+      title: SubmitWordBody
+    SummaryPoint:
+      properties:
+        text:
+          type: string
+          title: Text
+        source:
+          type: string
+          title: Source
+      type: object
+      required:
+      - text
+      - source
+      title: SummaryPoint
+    SummaryResponse:
+      properties:
+        points:
+          items:
+            $ref: '#/components/schemas/SummaryPoint'
+          type: array
+          title: Points
+          default: []
+        raw_markdown:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Raw Markdown
+        updated_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Updated At
+      type: object
+      title: SummaryResponse
+    TalkPresentationPathRequest:
+      properties:
+        path:
+          type: string
+          title: Path
+      type: object
+      required:
+      - path
+      title: TalkPresentationPathRequest
+    ToggleAnsweredBody:
+      properties:
+        answered:
+          type: boolean
+          title: Answered
+          default: false
+      type: object
+      title: ToggleAnsweredBody
+    UploadSeenRequest:
+      properties:
+        uuid:
+          type: string
+          title: Uuid
+        file_id:
+          type: string
+          title: File Id
+      type: object
+      required:
+      - uuid
+      - file_id
+      title: UploadSeenRequest
+    UploadedFileEntry:
+      properties:
+        id:
+          type: string
+          title: Id
+        filename:
+          type: string
+          title: Filename
+        size:
+          type: integer
+          title: Size
+        disk_path:
+          type: string
+          title: Disk Path
+        seen_by_host:
+          type: boolean
+          title: Seen By Host
+      type: object
+      required:
+      - id
+      - filename
+      - size
+      - disk_path
+      - seen_by_host
+      title: UploadedFileEntry
+    UpvoteQuestionBody:
+      properties:
+        question_id:
+          type: string
+          title: Question Id
+      type: object
+      required:
+      - question_id
+      title: UpvoteQuestionBody
+    UpvoteRequest:
+      properties:
+        argument_id:
+          type: string
+          title: Argument Id
+      type: object
+      required:
+      - argument_id
+      title: UpvoteRequest
+    VoteRequest:
+      properties:
+        options:
+          items:
+            type: integer
+          type: array
+          title: Options
+      type: object
+      required:
+      - options
+      title: VoteRequest
+    WordcloudData:
+      properties:
+        words:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Words
+        word_order:
+          items:
+            type: string
+          type: array
+          title: Word Order
+        topic:
+          type: string
+          title: Topic
+      type: object
+      required:
+      - words
+      - word_order
+      - topic
+      title: WordcloudData

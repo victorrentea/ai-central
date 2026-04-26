@@ -1,0 +1,24 @@
+@startuml
+!define DIAGRAM_ID Slides___C4_Container_View
+!include <C4/C4_Container>
+
+title Slides — C4 Container View
+caption <color:gray>Generated 2026-04-17 from docs/sequences/extracted/06-slides.puml</color>
+LAYOUT_WITH_LEGEND()
+
+Person(host, "Host", "Controls the session and slides")
+System_Ext(gdrive, "Google Drive", "Source of slide PDF exports")
+Person(participant, "Participant", "Follows slides in browser")
+
+System_Boundary(workshop, "Workshop Tool") {
+    Container(railway, "Railway Backend", "FastAPI on Railway", "Transparent proxy for participant REST; triggers GDrive slide downloads.")
+    Container(daemon, "Training Daemon", "Python / FastAPI (localhost)", "Owns session state, slide orchestration, and feature state machines.")
+}
+
+Rel(participant, daemon, "PUT /api/participant/name, GET /{session_id}/api/slides/check/{slug}", "REST")
+Rel(daemon, host, "participant_list_updated", "WS push")
+Rel(daemon, participant, "slides_cache_status", "WS push")
+Rel(daemon, railway, "POST /api/slides/download-from-gdrive/{slug}", "REST")
+Rel(railway, gdrive, "GET clean-code.pdf, GET design-patterns.pdf, GET architecture.pdf", "REST")
+
+@enduml

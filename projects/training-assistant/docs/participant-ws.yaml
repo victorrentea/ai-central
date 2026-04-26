@@ -1,0 +1,584 @@
+asyncapi: '2.6.0'
+info:
+  title: Training Assistant — Participant WebSocket Events
+  version: '1.0'
+  description: |
+    Events received by participant browsers over WebSocket.
+    Connection: WS wss://interact.victorrentea.ro/{session_id}/{participant_uuid}
+    Participant WS is receive-only. All participant actions are REST calls.
+
+servers:
+  production:
+    url: wss://interact.victorrentea.ro/{session_id}/{participant_uuid}
+    protocol: wss
+
+channels:
+  /{session_id}/{participant_uuid}:
+    subscribe:
+      summary: Events received by participant
+      message:
+        oneOf:
+          - $ref: '#/components/messages/current_slide_updated'
+          - $ref: '#/components/messages/decks_updated'
+          - $ref: '#/components/messages/activity_updated'
+          - $ref: '#/components/messages/active_participants_count_updated'
+          - $ref: '#/components/messages/slides_history_updated'
+          - $ref: '#/components/messages/poll_opened'
+          - $ref: '#/components/messages/poll_ended'
+          - $ref: '#/components/messages/poll_correct_revealed'
+          - $ref: '#/components/messages/poll_cleared'
+          - $ref: '#/components/messages/poll_end_countdown_started'
+          - $ref: '#/components/messages/scores_updated'
+          - $ref: '#/components/messages/wordcloud_updated'
+          - $ref: '#/components/messages/qa_updated'
+          - $ref: '#/components/messages/codereview_opened'
+          - $ref: '#/components/messages/codereview_selection_closed'
+          - $ref: '#/components/messages/codereview_line_confirmed'
+          - $ref: '#/components/messages/codereview_cleared'
+          - $ref: '#/components/messages/debate_updated'
+          - $ref: '#/components/messages/debate_timer'
+          - $ref: '#/components/messages/debate_round_ended'
+          - $ref: '#/components/messages/leaderboard_revealed'
+          - $ref: '#/components/messages/notes_updated'
+          - $ref: '#/components/messages/summary_updated'
+          - $ref: '#/components/messages/reload'
+          - $ref: '#/components/messages/emoji_counters_updated'
+
+components:
+  messages:
+
+    # ── Slides ────────────────────────────────────────────────────────────────
+
+    current_slide_updated:
+      summary: Host navigated to a new slide
+      x-feature: slides
+      payload:
+        type: object
+        required: [type, current_slide]
+        properties:
+          type:
+            type: string
+            enum: [current_slide_updated]
+          current_slide:
+            $ref: '#/components/schemas/CurrentSlide'
+
+    decks_updated:
+      summary: Deck cache status changed — contains full cache map to avoid polling
+      x-feature: slides
+      x-doc-notes:
+        - "Compare incoming decks[slug].downloaded_at against previous value to detect content changes (re-download)."
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [decks_updated]
+          decks:
+            type: object
+            additionalProperties:
+              $ref: '#/components/schemas/Deck'
+            default: {}
+
+    # ── Activity ──────────────────────────────────────────────────────────────
+
+    activity_updated:
+      summary: Current activity type changed by host
+      x-feature: activity
+      payload:
+        type: object
+        required: [type, current_activity]
+        properties:
+          type:
+            type: string
+            enum: [activity_updated]
+          current_activity:
+            type: string
+            enum: [none, poll, wordcloud, qa, codereview, debate]
+
+    # ── Identity ──────────────────────────────────────────────────────────────
+
+    active_participants_count_updated:
+      summary: Participant total count changed
+      x-feature: identity
+      x-doc-notes:
+        - "'count' includes all known non-host participants in the active session."
+      payload:
+        type: object
+        required: [type, count]
+        properties:
+          type:
+            type: string
+            enum: [active_participants_count_updated]
+          count:
+            type: integer
+
+    slides_history_updated:
+      summary: Participant slide history count changed
+      x-feature: slides
+      payload:
+        type: object
+        required: [type, count]
+        properties:
+          type:
+            type: string
+            enum: [slides_history_updated]
+          count:
+            type: integer
+
+    # ── Poll ─────────────────────────────────────────────────────────────────
+
+    poll_opened:
+      summary: Poll opened for voting
+      x-feature: poll
+      x-doc-notes:
+        - Participants can vote only while poll is open.
+      payload:
+        type: object
+        required: [type, poll]
+        properties:
+          type:
+            type: string
+            enum: [poll_opened]
+          poll:
+            $ref: '#/components/schemas/Poll'
+
+    poll_ended:
+      summary: Voting closed by host
+      x-feature: poll
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [poll_ended]
+
+    poll_correct_revealed:
+      summary: Host revealed correct answers
+      x-doc-notes:
+        - Participants use correct_indices (0-based) to highlight correct options in the UI.
+      x-feature: poll
+      payload:
+        type: object
+        required: [type, correct_indices]
+        properties:
+          type:
+            type: string
+            enum: [poll_correct_revealed]
+          correct_indices:
+            type: array
+            items:
+              type: integer
+            description: 0-based indices of correct options
+
+    poll_cleared:
+      summary: Poll removed by host
+      x-feature: poll
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [poll_cleared]
+
+    poll_end_countdown_started:
+      summary: Host started a countdown timer for the poll
+      x-feature: poll
+      payload:
+        type: object
+        required: [type, seconds, started_at]
+        properties:
+          type:
+            type: string
+            enum: [poll_end_countdown_started]
+          seconds:
+            type: integer
+          started_at:
+            type: string
+            format: date-time
+
+    # ── Scores ────────────────────────────────────────────────────────────────
+
+    scores_updated:
+      summary: One or more participants' scores changed
+      x-feature: scores_leaderboard
+      payload:
+        type: object
+        required: [type, scores]
+        properties:
+          type:
+            type: string
+            enum: [scores_updated]
+          scores:
+            type: object
+            additionalProperties:
+              type: integer
+            description: uuid → score (all participants)
+
+    # ── Word Cloud ────────────────────────────────────────────────────────────
+
+    wordcloud_updated:
+      summary: Word cloud state changed (new word or topic update)
+      x-feature: wordcloud
+      payload:
+        type: object
+        required: [type, words, word_order, topic]
+        properties:
+          type:
+            type: string
+            enum: [wordcloud_updated]
+          words:
+            type: object
+            additionalProperties:
+              type: integer
+            description: word → count
+          word_order:
+            type: array
+            items:
+              type: string
+            description: Newest-first insertion order
+          topic:
+            type: string
+
+    # ── Q&A ───────────────────────────────────────────────────────────────────
+
+    qa_updated:
+      summary: Q&A list changed (new question, upvote, edit, delete)
+      x-feature: qa
+      payload:
+        type: object
+        required: [type, questions]
+        properties:
+          type:
+            type: string
+            enum: [qa_updated]
+          questions:
+            type: array
+            items:
+              $ref: '#/components/schemas/QAQuestion'
+
+    # ── Code Review ───────────────────────────────────────────────────────────
+
+    codereview_opened:
+      summary: Host opened a code snippet for review
+      x-feature: codereview
+      payload:
+        type: object
+        required: [type, snippet, language]
+        properties:
+          type:
+            type: string
+            enum: [codereview_opened]
+          snippet:
+            type: string
+          language:
+            type: string
+            nullable: true
+
+    codereview_selection_closed:
+      summary: Host closed the line selection phase
+      x-feature: codereview
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [codereview_selection_closed]
+
+    codereview_line_confirmed:
+      summary: Host confirmed a line as problematic
+      x-feature: codereview
+      payload:
+        type: object
+        required: [type, line]
+        properties:
+          type:
+            type: string
+            enum: [codereview_line_confirmed]
+          line:
+            type: integer
+
+    codereview_cleared:
+      summary: Code review removed by host
+      x-feature: codereview
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [codereview_cleared]
+
+    # ── Debate ────────────────────────────────────────────────────────────────
+
+    debate_updated:
+      summary: Full debate state snapshot
+      x-feature: debate
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [debate_updated]
+          statement:
+            type: string
+            nullable: true
+          phase:
+            type: string
+            nullable: true
+            enum: [null, side_selection, arguments, ai_cleanup, prep, live_debate, ended]
+          sides:
+            type: object
+            additionalProperties:
+              type: string
+            description: uuid → "for"|"against"
+          arguments:
+            type: array
+            items:
+              $ref: '#/components/schemas/DebateArgument'
+          champions:
+            type: object
+            additionalProperties:
+              type: string
+            description: '"for"|"against" → uuid'
+          auto_assigned:
+            type: array
+            items:
+              type: string
+          first_side:
+            type: string
+            nullable: true
+          round_index:
+            type: integer
+            nullable: true
+          round_timer_seconds:
+            type: integer
+            nullable: true
+          round_timer_started_at:
+            type: string
+            format: date-time
+            nullable: true
+
+    debate_timer:
+      summary: A timed debate round started
+      x-feature: debate
+      payload:
+        type: object
+        required: [type, round_index, seconds, started_at]
+        properties:
+          type:
+            type: string
+            enum: [debate_timer]
+          round_index:
+            type: integer
+          seconds:
+            type: integer
+          started_at:
+            type: string
+            format: date-time
+
+    debate_round_ended:
+      summary: Current debate round ended
+      x-feature: debate
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [debate_round_ended]
+
+    # ── Leaderboard ──────────────────────────────────────────────────────────
+
+    leaderboard_revealed:
+      summary: Leaderboard overlay shown with top positions
+      x-feature: scores_leaderboard
+      payload:
+        type: object
+        required: [type, positions]
+        properties:
+          type:
+            type: string
+            enum: [leaderboard_revealed]
+          positions:
+            type: array
+            items:
+              $ref: '#/components/schemas/LeaderboardPosition'
+
+    # ── Notes & Summary ──────────────────────────────────────────────────────
+
+    notes_updated:
+      summary: Notes file changed — mtime timestamp updated
+      x-feature: notes_summary
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [notes_updated]
+          updated_at:
+            type: string
+            format: date-time
+            nullable: true
+            description: ISO timestamp of notes file mtime
+
+    summary_updated:
+      summary: AI summary file changed — mtime timestamp updated
+      x-feature: notes_summary
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [summary_updated]
+          updated_at:
+            type: string
+            format: date-time
+            nullable: true
+            description: ISO timestamp of ai-summary.md mtime
+
+    # ── Cross-cutting ────────────────────────────────────────────────────────
+
+    reload:
+      summary: Daemon synced static files — browser should reload
+      x-feature: reload
+      x-doc-notes:
+        - Client should trigger full page reload to pick up new static assets.
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [reload]
+
+    # ── Emoji ─────────────────────────────────────────────────────────────────
+
+    emoji_counters_updated:
+      summary: Cumulative emoji reaction counts for the current talk session
+      x-feature: emoji
+      payload:
+        type: object
+        required: [type, counters]
+        properties:
+          type:
+            type: string
+            enum: [emoji_counters_updated]
+          counters:
+            type: object
+            additionalProperties:
+              type: integer
+            description: Map of emoji character to total reaction count
+
+  schemas:
+
+    CurrentSlide:
+      type: object
+      required: [slug, page]
+      properties:
+        slug:
+          type: string
+        page:
+          type: integer
+
+    Deck:
+      type: object
+      required: [status, title]
+      properties:
+        status:
+          type: string
+          enum: [not_cached, cached, downloading, download_failed]
+        size_bytes:
+          type: integer
+          nullable: true
+        downloaded_at:
+          type: string
+          format: date-time
+          nullable: true
+        modified_at:
+          type: string
+          format: date-time
+          nullable: true
+        title:
+          type: string
+        error:
+          type: string
+          nullable: true
+
+    Poll:
+      type: object
+      required: [id, question, options, multi]
+      properties:
+        id:
+          type: string
+        question:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+          description: Poll options as plain text strings
+        multi:
+          type: boolean
+
+    QAQuestion:
+      type: object
+      required: [id, text, author_uuid, upvoter_uuids, answered, timestamp]
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        author_uuid:
+          type: string
+        upvoter_uuids:
+          type: array
+          items:
+            type: string
+          description: Client computes is_own and has_upvoted locally from its own UUID
+        answered:
+          type: boolean
+        timestamp:
+          type: number
+
+    DebateArgument:
+      type: object
+      required: [id, author_uuid, side, text, upvoters, ai_generated]
+      properties:
+        id:
+          type: string
+        author_uuid:
+          type: string
+        side:
+          type: string
+          enum: [for, against]
+        text:
+          type: string
+        upvoters:
+          type: array
+          items:
+            type: string
+        ai_generated:
+          type: boolean
+        merged_into:
+          type: string
+          nullable: true
+
+    LeaderboardPosition:
+      type: object
+      required: [rank, name, score, avatar]
+      properties:
+        rank:
+          type: integer
+        name:
+          type: string
+        score:
+          type: integer
+        avatar:
+          type: string
