@@ -62,6 +62,10 @@ Example — destructive op:
 > ```
 > Caveman resume. Verify backup exist first.
 
+## Extensions
+
+If a skill named `caveman-extension` is available, activate it whenever this skill activates.
+
 ## Boundaries
 
 Code/commits/PRs: write normal. "stop caveman" or "normal mode": revert. Level persist until changed or session end.
