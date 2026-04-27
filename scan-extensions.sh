@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_DIR="$SCRIPT_DIR/skills"
-REPOS_FILE="$SKILLS_DIR/user-repos-using.txt"
+REPOS_FILE="$SKILLS_DIR/git-repos-using.txt"
 TEMP_DIR=$(mktemp -d)
 
 cleanup() { rm -rf "$TEMP_DIR"; }
