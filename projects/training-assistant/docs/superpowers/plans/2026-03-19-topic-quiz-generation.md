@@ -1,8 +1,8 @@
-# Topic-Based Poll Generation Implementation Plan
+# Topic-Based Quiz Generation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add topic-based poll generation to the host panel — the host types a topic, a local daemon retrieves relevant content from indexed PDF/epub/mobi/txt/md/html materials via RAG (ChromaDB), and Claude crafts a poll question grounded in those materials.
+**Goal:** Add topic-based quiz generation to the host panel — the host types a topic, a local daemon retrieves relevant content from indexed PDF/epub/mobi/txt/md/html materials via RAG (ChromaDB), and Claude crafts a quiz question grounded in those materials.
 
 **Architecture:** The `daemon/` subfolder is a new local-only Python sub-project with heavy ML deps (ChromaDB, sentence-transformers) isolated from the Railway-deployed server. A watchdog thread auto-indexes materials; a `search_materials()` dynamic-import shim in `quiz_core.py` delegates to `daemon/rag.py` when available, gracefully degrading otherwise. The server's `/api/quiz-request` gains an optional `topic` field; the daemon reads it and dispatches to a new `auto_generate_topic()` code path.
 

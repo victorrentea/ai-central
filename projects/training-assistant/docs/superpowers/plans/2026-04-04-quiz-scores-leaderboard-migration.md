@@ -1,14 +1,14 @@
-# Phase 4c: Poll + Scores + Leaderboard Migration — Implementation Plan
+# Phase 4c: Quiz + Scores + Leaderboard Migration — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Migrate poll voting/scoring/timer, scores (global authority), and leaderboard from Railway to daemon. Daemon becomes the single score authority with Railway keeping a read-only mirror.
+**Goal:** Migrate quiz voting/scoring/timer, scores (global authority), and leaderboard from Railway to daemon. Daemon becomes the single score authority with Railway keeping a read-only mirror.
 
-**Architecture:** Daemon holds all poll state and scores. Participant votes are REST calls proxied via Railway. Host poll/leaderboard management hits daemon localhost. Railway keeps `state.scores` as read-only mirror (updated by `scores_updated` broadcast) for unmigrated features. Quiz integration calls poll state directly.
+**Architecture:** Daemon holds all quiz state and scores. Participant votes are REST calls proxied via Railway. Host quiz/leaderboard management hits daemon localhost. Railway keeps `state.scores` as read-only mirror (updated by `scores_updated` broadcast) for unmigrated features. Quiz integration calls quiz state directly.
 
 **Tech Stack:** Python 3.12, FastAPI, Starlette TestClient, pytest, unittest.mock, websockets, asyncio
 
-**Spec:** `docs/superpowers/specs/2026-04-04-poll-scores-migration-design.md`
+**Spec:** `docs/superpowers/specs/2026-04-04-quiz-scores-migration-design.md`
 
 ---
 
@@ -25,9 +25,9 @@ Phase 4a/4b established patterns: daemon state cache singletons with threading l
 
 ### Design decisions (from spec)
 - No backward compatibility — delete old code, produce final architecture
-- No live vote counts during voting — results only after poll closes
+- No live vote counts during voting — results only after quiz closes
 - Votes are final for single-select (server-enforced); multi-select allows toggling
-- Poll state is daemon-only — not in `daemon_state_push`, lost on daemon restart
+- Quiz state is daemon-only — not in `daemon_state_push`, lost on daemon restart
 - Scores: daemon is authority, Railway keeps read-only mirror updated by broadcast
 - Leaderboard broadcast is unpersonalized — client computes own rank
 - Codereview scoring: Railway sends `codereview_score_award` WS to daemon instead of mutating `state.scores`
@@ -120,7 +120,7 @@ class Scores:
             self.scores[pid] = self.scores.get(pid, 0) + points
 
     def snapshot_base(self):
-        """Capture current scores as base (called when poll opens)."""
+        """Capture current scores as base (called when quiz opens)."""
         with self._lock:
             self.base_scores = dict(self.scores)
 
@@ -158,45 +158,45 @@ git commit -m "feat(daemon): add global scores module with thread-safe operation
 
 ---
 
-## Task 2: Daemon poll state module
+## Task 2: Daemon quiz state module
 
 **Files:**
-- Create: `daemon/poll/__init__.py`
-- Create: `daemon/poll/state.py`
-- Test: `tests/daemon/test_poll_state.py`
+- Create: `daemon/quiz/__init__.py`
+- Create: `daemon/quiz/state.py`
+- Test: `tests/daemon/test_quiz_state.py`
 
-- [ ] **Step 1: Write tests for PollState**
+- [ ] **Step 1: Write tests for QuizState**
 
 Test cases needed:
-- `test_create_poll` — creates poll object, clears previous state
-- `test_create_poll_with_correct_count_zero` — `correct_count=0` handled via `is not None`
-- `test_open_poll` — sets active, clears votes, snapshots base scores
-- `test_close_poll` — returns vote_counts and total_votes
+- `test_create_quiz` — creates quiz object, clears previous state
+- `test_create_quiz_with_correct_count_zero` — `correct_count=0` handled via `is not None`
+- `test_open_quiz` — sets active, clears votes, snapshots base scores
+- `test_close_quiz` — returns vote_counts and total_votes
 - `test_cast_vote_single_select` — accepts valid vote
 - `test_cast_vote_single_select_final` — rejects second vote from same pid
 - `test_cast_vote_multi_select` — accepts valid multi-vote
 - `test_cast_vote_multi_select_toggle` — allows overwrite in multi-select
 - `test_cast_vote_multi_select_over_limit` — rejects if more than correct_count
-- `test_cast_vote_poll_closed` — rejects when poll_active is False
-- `test_cast_vote_no_poll` — rejects when poll is None
+- `test_cast_vote_quiz_closed` — rejects when quiz_active is False
+- `test_cast_vote_no_quiz` — rejects when quiz is None
 - `test_cast_vote_invalid_option` — rejects unknown option_id
 - `test_reveal_correct_speed_scoring` — fastest voter gets MAX_POINTS, slower gets less
 - `test_reveal_correct_multi_proportional` — multi-select proportional scoring (R-W)/C
 - `test_reveal_correct_no_votes` — no error when no votes cast
 - `test_start_timer` — returns seconds + ISO started_at
-- `test_clear` — resets all poll state
+- `test_clear` — resets all quiz state
 - `test_vote_counts_dirty_flag` — cache invalidated on new vote
-- `test_append_to_quiz_md` — builds markdown from closed poll
+- `test_append_to_quiz_md` — builds markdown from closed quiz
 
 Use a mock `Scores` object for `reveal_correct` tests.
 
 - [ ] **Step 2: Run tests — expect FAIL**
 
-Run: `pytest tests/daemon/test_poll_state.py -v`
+Run: `pytest tests/daemon/test_quiz_state.py -v`
 
-- [ ] **Step 3: Implement `daemon/poll/state.py`**
+- [ ] **Step 3: Implement `daemon/quiz/state.py`**
 
-Copy the `PollState` class from the spec (`docs/superpowers/specs/2026-04-04-poll-scores-migration-design.md` lines 90-308). Create `daemon/poll/__init__.py` (empty).
+Copy the `QuizState` class from the spec (`docs/superpowers/specs/2026-04-04-quiz-scores-migration-design.md` lines 90-308). Create `daemon/quiz/__init__.py` (empty).
 
 Key implementation notes:
 - Use dirty flag for vote_counts cache (not len-based)
@@ -207,81 +207,81 @@ Key implementation notes:
 
 - [ ] **Step 4: Run tests — expect PASS**
 
-Run: `pytest tests/daemon/test_poll_state.py -v`
+Run: `pytest tests/daemon/test_quiz_state.py -v`
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add daemon/poll/ tests/daemon/test_poll_state.py
-git commit -m "feat(daemon): add poll state module with speed-based scoring"
+git add daemon/quiz/ tests/daemon/test_quiz_state.py
+git commit -m "feat(daemon): add quiz state module with speed-based scoring"
 ```
 
 ---
 
-## Task 3: Daemon poll router (participant + host endpoints)
+## Task 3: Daemon quiz router (participant + host endpoints)
 
 **Files:**
-- Create: `daemon/poll/router.py`
-- Test: `tests/daemon/test_poll_router.py`
+- Create: `daemon/quiz/router.py`
+- Test: `tests/daemon/test_quiz_router.py`
 
-- [ ] **Step 1: Write tests for poll router**
+- [ ] **Step 1: Write tests for quiz router**
 
 Follow the pattern from `tests/daemon/test_wordcloud_router.py`:
 
 **Participant tests:**
-- `test_cast_vote_single_select` — POST `/api/participant/poll/vote` with `{option_id}`, verify 200 + state updated
+- `test_cast_vote_single_select` — POST `/api/participant/quiz/vote` with `{option_id}`, verify 200 + state updated
 - `test_cast_vote_multi_select` — POST with `{option_ids}`, verify 200
-- `test_cast_vote_rejected` — POST to closed poll, verify 409
+- `test_cast_vote_rejected` — POST to closed quiz, verify 409
 - `test_cast_vote_no_participant_id` — missing header, verify 400
 
 **Host tests:**
-- `test_create_poll` — POST `/api/test-session/poll`, verify poll created + ws_client.send called with `poll_opened` broadcast (only if auto-open, otherwise just store)
-- `test_open_poll` — POST `/api/test-session/poll/open`, verify poll_active + broadcast
-- `test_close_poll` — POST `/api/test-session/poll/close`, verify poll deactivated + broadcast with vote_counts
-- `test_reveal_correct` — PUT `/api/test-session/poll/correct`, verify scores computed + `poll_correct_revealed` and `scores_updated` broadcasts + `send_to_host` called
-- `test_start_timer` — POST `/api/test-session/poll/timer`, verify broadcast with seconds + started_at
-- `test_delete_poll` — DELETE `/api/test-session/poll`, verify state cleared + `poll_cleared` broadcast
+- `test_create_quiz` — POST `/api/test-session/quiz`, verify quiz created + ws_client.send called with `quiz_opened` broadcast (only if auto-open, otherwise just store)
+- `test_open_quiz` — POST `/api/test-session/quiz/open`, verify quiz_active + broadcast
+- `test_close_quiz` — POST `/api/test-session/quiz/close`, verify quiz deactivated + broadcast with vote_counts
+- `test_reveal_correct` — PUT `/api/test-session/quiz/correct`, verify scores computed + `quiz_correct_revealed` and `scores_updated` broadcasts + `send_to_host` called
+- `test_start_timer` — POST `/api/test-session/quiz/timer`, verify broadcast with seconds + started_at
+- `test_delete_quiz` — DELETE `/api/test-session/quiz`, verify state cleared + `quiz_cleared` broadcast
 - `test_get_quiz_md` — GET `/api/test-session/quiz-md`, verify returns markdown
 
 Fixtures (following existing pattern):
 ```python
 @pytest.fixture
-def fresh_poll_state():
-    ps = PollState()
-    with patch("daemon.poll.router.poll_state", ps):
+def fresh_quiz_state():
+    ps = QuizState()
+    with patch("daemon.quiz.router.quiz_state", ps):
         yield ps
 
 @pytest.fixture
 def fresh_scores():
     s = Scores()
-    with patch("daemon.poll.router.scores", s):
+    with patch("daemon.quiz.router.scores", s):
         yield s
 
 @pytest.fixture
 def mock_ws_client():
     mock = MagicMock()
     mock.send.return_value = True
-    with patch("daemon.poll.router._ws_client", mock):
+    with patch("daemon.quiz.router._ws_client", mock):
         yield mock
 
 @pytest.fixture
 def mock_host_ws():
-    with patch("daemon.poll.router.send_to_host", new_callable=AsyncMock) as mock:
+    with patch("daemon.quiz.router.send_to_host", new_callable=AsyncMock) as mock:
         yield mock
 ```
 
 - [ ] **Step 2: Run tests — expect FAIL**
 
-Run: `pytest tests/daemon/test_poll_router.py -v`
+Run: `pytest tests/daemon/test_quiz_router.py -v`
 
-- [ ] **Step 3: Implement `daemon/poll/router.py`**
+- [ ] **Step 3: Implement `daemon/quiz/router.py`**
 
 ```python
-"""Poll endpoints — participant (proxied via Railway) + host (daemon localhost)."""
+"""Quiz endpoints — participant (proxied via Railway) + host (daemon localhost)."""
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from daemon.poll.state import poll_state
+from daemon.quiz.state import quiz_state
 from daemon.scores import scores
 from daemon.host_ws import send_to_host
 
@@ -292,7 +292,7 @@ def set_ws_client(client):
     _ws_client = client
 
 # --- Participant router (proxied via Railway) ---
-participant_router = APIRouter(prefix="/api/participant/poll", tags=["poll"])
+participant_router = APIRouter(prefix="/api/participant/quiz", tags=["quiz"])
 
 @participant_router.post("/vote")
 async def cast_vote(request: Request):
@@ -302,16 +302,16 @@ async def cast_vote(request: Request):
     body = await request.json()
     option_id = body.get("option_id")
     option_ids = body.get("option_ids")
-    accepted = poll_state.cast_vote(pid, option_id=option_id, option_ids=option_ids)
+    accepted = quiz_state.cast_vote(pid, option_id=option_id, option_ids=option_ids)
     if not accepted:
         return JSONResponse({"error": "Vote rejected"}, status_code=409)
     return JSONResponse({"ok": True})
 
 # --- Host router (daemon localhost direct) ---
-host_router = APIRouter(prefix="/api/{session_id}/poll", tags=["poll"])
+host_router = APIRouter(prefix="/api/{session_id}/quiz", tags=["quiz"])
 
 @host_router.post("")
-async def create_poll(request: Request):
+async def create_quiz(request: Request):
     body = await request.json()
     question = body.get("question", "")
     options = body.get("options", [])
@@ -319,67 +319,67 @@ async def create_poll(request: Request):
     correct_count = body.get("correct_count")
     source = body.get("source")
     page = body.get("page")
-    # Activity gate — prevent creating poll when another activity is active
+    # Activity gate — prevent creating quiz when another activity is active
     from daemon.participant.state import participant_state
     activity = participant_state.current_activity
-    if activity and activity not in ("none", "poll"):
+    if activity and activity not in ("none", "quiz"):
         return JSONResponse({"error": f"Activity {activity} is active"}, status_code=409)
-    poll = poll_state.create_poll(question, options, multi, correct_count, source, page)
-    participant_state.current_activity = "poll"
-    # Only notify host — participants see nothing until poll is opened
-    await send_to_host({"type": "poll_created", "poll": poll})
-    return JSONResponse({"ok": True, "poll": poll})
+    quiz = quiz_state.create_quiz(question, options, multi, correct_count, source, page)
+    participant_state.current_activity = "quiz"
+    # Only notify host — participants see nothing until quiz is opened
+    await send_to_host({"type": "quiz_created", "quiz": quiz})
+    return JSONResponse({"ok": True, "quiz": quiz})
 
 @host_router.post("/open")
-async def open_poll(request: Request):
-    if not poll_state.poll:
-        return JSONResponse({"error": "No poll"}, status_code=400)
-    poll_state.open_poll(scores.snapshot_base)
-    _broadcast({"type": "poll_opened", "poll": poll_state.poll})
-    await send_to_host({"type": "poll_opened", "poll": poll_state.poll})
+async def open_quiz(request: Request):
+    if not quiz_state.quiz:
+        return JSONResponse({"error": "No quiz"}, status_code=400)
+    quiz_state.open_quiz(scores.snapshot_base)
+    _broadcast({"type": "quiz_opened", "quiz": quiz_state.quiz})
+    await send_to_host({"type": "quiz_opened", "quiz": quiz_state.quiz})
     return JSONResponse({"ok": True})
 
 @host_router.post("/close")
-async def close_poll(request: Request):
-    if not poll_state.poll:
-        return JSONResponse({"error": "No poll"}, status_code=400)
-    result = poll_state.close_poll()
-    _broadcast({"type": "poll_closed", **result})
-    await send_to_host({"type": "poll_closed", **result})
+async def close_quiz(request: Request):
+    if not quiz_state.quiz:
+        return JSONResponse({"error": "No quiz"}, status_code=400)
+    result = quiz_state.close_quiz()
+    _broadcast({"type": "quiz_closed", **result})
+    await send_to_host({"type": "quiz_closed", **result})
     return JSONResponse({"ok": True, **result})
 
 @host_router.put("/correct")
 async def reveal_correct(request: Request):
-    if not poll_state.poll:
-        return JSONResponse({"error": "No poll"}, status_code=400)
+    if not quiz_state.quiz:
+        return JSONResponse({"error": "No quiz"}, status_code=400)
     body = await request.json()
     correct_ids = body.get("correct_ids", [])
-    result = poll_state.reveal_correct(correct_ids, scores)
-    _broadcast({"type": "poll_correct_revealed", **result})
+    result = quiz_state.reveal_correct(correct_ids, scores)
+    _broadcast({"type": "quiz_correct_revealed", **result})
     _broadcast({"type": "scores_updated", "scores": result["scores"]})
-    await send_to_host({"type": "poll_correct_revealed", **result})
+    await send_to_host({"type": "quiz_correct_revealed", **result})
     await send_to_host({"type": "scores_updated", "scores": result["scores"]})
     return JSONResponse({"ok": True})
 
 @host_router.post("/timer")
 async def start_timer(request: Request):
-    if not poll_state.poll:
-        return JSONResponse({"error": "No poll"}, status_code=400)
+    if not quiz_state.quiz:
+        return JSONResponse({"error": "No quiz"}, status_code=400)
     body = await request.json()
     seconds = body.get("seconds", 30)
-    result = poll_state.start_timer(seconds)
-    _broadcast({"type": "poll_timer_started", **result})
-    await send_to_host({"type": "poll_timer_started", **result})
+    result = quiz_state.start_timer(seconds)
+    _broadcast({"type": "quiz_timer_started", **result})
+    await send_to_host({"type": "quiz_timer_started", **result})
     return JSONResponse({"ok": True})
 
 @host_router.delete("")
-async def delete_poll(request: Request):
-    poll_state.clear()
+async def delete_quiz(request: Request):
+    quiz_state.clear()
     from daemon.participant.state import participant_state
     participant_state.current_activity = "none"
-    _broadcast({"type": "poll_cleared"})
+    _broadcast({"type": "quiz_cleared"})
     _broadcast({"type": "activity_updated", "current_activity": "none"})
-    await send_to_host({"type": "poll_cleared"})
+    await send_to_host({"type": "quiz_cleared"})
     return JSONResponse({"ok": True})
 
 # --- Quiz history (public) ---
@@ -387,7 +387,7 @@ quiz_md_router = APIRouter(tags=["quiz"])
 
 @quiz_md_router.get("/api/{session_id}/quiz-md")
 async def get_quiz_md():
-    return JSONResponse({"content": poll_state.quiz_md_content})
+    return JSONResponse({"content": quiz_state.quiz_md_content})
 
 # --- Broadcast helper ---
 def _broadcast(event: dict):
@@ -397,13 +397,13 @@ def _broadcast(event: dict):
 
 - [ ] **Step 4: Run tests — expect PASS**
 
-Run: `pytest tests/daemon/test_poll_router.py -v`
+Run: `pytest tests/daemon/test_quiz_router.py -v`
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add daemon/poll/router.py tests/daemon/test_poll_router.py
-git commit -m "feat(daemon): add poll router with participant vote + host CRUD endpoints"
+git add daemon/quiz/router.py tests/daemon/test_quiz_router.py
+git commit -m "feat(daemon): add quiz router with participant vote + host CRUD endpoints"
 ```
 
 ---
@@ -505,17 +505,17 @@ git commit -m "feat(daemon): add leaderboard router with unpersonalized broadcas
 - Modify: `daemon/__main__.py` (lines 320-357 — handler registrations and set_ws_client calls)
 - Modify: `daemon/host_server.py` (lines 69-81 — router mounts)
 
-- [ ] **Step 1: Wire poll + leaderboard routers in `daemon/host_server.py`**
+- [ ] **Step 1: Wire quiz + leaderboard routers in `daemon/host_server.py`**
 
 Add imports and mount routers following the pattern at lines 73-81:
 ```python
-from daemon.poll.router import participant_router as poll_participant_router
-from daemon.poll.router import host_router as poll_host_router
-from daemon.poll.router import quiz_md_router
+from daemon.quiz.router import participant_router as quiz_participant_router
+from daemon.quiz.router import host_router as quiz_host_router
+from daemon.quiz.router import quiz_md_router
 from daemon.leaderboard.router import router as leaderboard_router
 
-app.include_router(poll_participant_router)
-app.include_router(poll_host_router)
+app.include_router(quiz_participant_router)
+app.include_router(quiz_host_router)
 app.include_router(quiz_md_router)
 app.include_router(leaderboard_router)
 ```
@@ -524,18 +524,18 @@ app.include_router(leaderboard_router)
 
 Add to imports and initialization (following pattern at lines 336-357):
 ```python
-from daemon.poll.router import set_ws_client as set_poll_ws
+from daemon.quiz.router import set_ws_client as set_quiz_ws
 from daemon.leaderboard.router import set_ws_client as set_lb_ws
 from daemon.scores import scores as daemon_scores
-from daemon.poll.state import poll_state
+from daemon.quiz.state import quiz_state
 
 # In set_ws_client calls section:
-set_poll_ws(ws_client)
+set_quiz_ws(ws_client)
 set_lb_ws(ws_client)
 
 # Note: do NOT add daemon_scores.sync_from_restore to _handle_daemon_state_push.
 # Daemon owns scores — syncing from Railway's stale mirror would corrupt them after WS reconnect.
-# poll_state also has NO sync_from_restore — daemon owns poll state exclusively.
+# quiz_state also has NO sync_from_restore — daemon owns quiz state exclusively.
 ```
 
 - [ ] **Step 3: Add `codereview_score_award` and `scores_reset` handlers**
@@ -567,7 +567,7 @@ Run: `pytest tests/daemon/ -v --tb=short`
 
 ```bash
 git add daemon/__main__.py daemon/host_server.py
-git commit -m "feat(daemon): wire poll, leaderboard, and scores into daemon startup"
+git commit -m "feat(daemon): wire quiz, leaderboard, and scores into daemon startup"
 ```
 
 ---
@@ -626,18 +626,18 @@ git commit -m "refactor(daemon): switch Q&A and wordcloud from score_award write
 
 ---
 
-## Task 7: Update quiz integration to call poll state directly
+## Task 7: Update quiz integration to call quiz state directly
 
 **Files:**
-- Modify: `daemon/quiz/poll_api.py` (full rewrite — lines 1-85)
+- Modify: `daemon/quiz/quiz_api.py` (full rewrite — lines 1-85)
 
-- [ ] **Step 1: Rewrite `daemon/quiz/poll_api.py`**
+- [ ] **Step 1: Rewrite `daemon/quiz/quiz_api.py`**
 
-Replace WS message sends with direct poll state calls:
+Replace WS message sends with direct quiz state calls:
 
 ```python
-"""Helpers for quiz → poll integration. Calls daemon poll state directly."""
-from daemon.poll.state import poll_state
+"""Helpers for quiz → quiz integration. Calls daemon quiz state directly."""
+from daemon.quiz.state import quiz_state
 from daemon.scores import scores
 from daemon import log
 
@@ -647,40 +647,40 @@ def set_ws_client(client):
     global _ws_client
     _ws_client = client
 
-def post_poll(quiz: dict) -> None:
-    """Create poll from quiz data."""
+def post_quiz(quiz: dict) -> None:
+    """Create quiz from quiz data."""
     question = quiz["question"]
     if quiz.get("source"):
         question += f"\n\n(Source: {quiz['source']}, p. {quiz.get('page', 'N/A')})"
 
-    poll = poll_state.create_poll(
+    quiz = quiz_state.create_quiz(
         question=question,
         options=quiz["options"],
         multi=len(quiz.get("correct_indices", [])) > 1,
     )
     if _ws_client and _ws_client.connected:
-        _ws_client.send({"type": "broadcast", "event": {"type": "poll_created", "poll": poll}})
+        _ws_client.send({"type": "broadcast", "event": {"type": "quiz_created", "quiz": quiz}})
     else:
-        log.error("daemon", "Cannot broadcast poll: WS not connected")
+        log.error("daemon", "Cannot broadcast quiz: WS not connected")
 
-def open_poll() -> None:
-    """Open voting on current poll."""
-    poll_state.open_poll(scores.snapshot_base)
+def open_quiz() -> None:
+    """Open voting on current quiz."""
+    quiz_state.open_quiz(scores.snapshot_base)
     if _ws_client and _ws_client.connected:
-        _ws_client.send({"type": "broadcast", "event": {"type": "poll_opened", "poll": poll_state.poll}})
+        _ws_client.send({"type": "broadcast", "event": {"type": "quiz_opened", "quiz": quiz_state.quiz}})
     else:
-        log.error("daemon", "Cannot broadcast poll open: WS not connected")
+        log.error("daemon", "Cannot broadcast quiz open: WS not connected")
 
 def fetch_quiz_history() -> str:
-    """Return accumulated closed polls as markdown."""
-    return poll_state.quiz_md_content.strip()
+    """Return accumulated closed quizzes as markdown."""
+    return quiz_state.quiz_md_content.strip()
 ```
 
 Remove `post_status`, `fetch_summary_points` if they're handled elsewhere, or keep if still needed. Check callers in `daemon/quiz/generator.py`.
 
 - [ ] **Step 2: Update callers**
 
-Check `daemon/quiz/generator.py` for calls to `post_poll`, `open_poll`, `fetch_quiz_history`, `post_status`. Update import paths and function signatures (removed `config` parameter where not needed).
+Check `daemon/quiz/generator.py` for calls to `post_quiz`, `open_quiz`, `fetch_quiz_history`, `post_status`. Update import paths and function signatures (removed `config` parameter where not needed).
 
 - [ ] **Step 3: Run quiz tests**
 
@@ -690,8 +690,8 @@ Fix any broken tests due to changed signatures.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add daemon/quiz/poll_api.py daemon/quiz/generator.py
-git commit -m "refactor(daemon): quiz creates polls via direct state calls instead of WS messages"
+git add daemon/quiz/quiz_api.py daemon/quiz/generator.py
+git commit -m "refactor(daemon): quiz creates quizzes via direct state calls instead of WS messages"
 ```
 
 ---
@@ -739,23 +739,23 @@ async def _handle_broadcast(data: dict):
 - [ ] **Step 2: Remove old handlers from `_DAEMON_MSG_HANDLERS`**
 
 Remove these entries from the dict at lines 644-673:
-- `MSG_POLL_CREATE: _handle_poll_create`
-- `MSG_POLL_OPEN: _handle_poll_open`
+- `MSG_QUIZ_CREATE: _handle_quiz_create`
+- `MSG_QUIZ_OPEN: _handle_quiz_open`
 - `MSG_SCORE_AWARD: _handle_score_award`
 - `MSG_WORDCLOUD_STATE_SYNC: _handle_wordcloud_state_sync`
 
 Delete the handler functions themselves:
-- `_handle_poll_create` (lines 172-202)
-- `_handle_poll_open` (lines 205-219)
+- `_handle_quiz_create` (lines 172-202)
+- `_handle_quiz_open` (lines 205-219)
 - `_handle_score_award` (lines 635-641)
 - `_handle_wordcloud_state_sync` (lines 625-632)
 
 Add handler for `codereview_score_award` — this is a daemon→Railway→daemon pass-through. Actually, this goes the other direction: Railway sends `codereview_score_award` TO daemon, not FROM daemon. So it's not in `_DAEMON_MSG_HANDLERS`. The codereview router sends it directly via `state.daemon_ws.send_json()`.
 
-- [ ] **Step 3: Remove poll + score fields from `daemon_state_push` (lines 708-726)**
+- [ ] **Step 3: Remove quiz + score fields from `daemon_state_push` (lines 708-726)**
 
 Remove from the push payload:
-- Any poll fields (check actual code — currently no poll fields in push)
+- Any quiz fields (check actual code — currently no quiz fields in push)
 - `scores` and `base_scores` — daemon owns scores; pushing Railway's stale mirror back to daemon on WS reconnect would corrupt authoritative score data
 
 **Note on `_handle_participant_registered` (line 574-576):** This handler writes `state.scores.setdefault(pid, data["score"])`. This is acceptable — it only initializes scores for new participants (`.setdefault` doesn't overwrite existing values). The daemon sends the correct initial score. Leave it as-is.
@@ -770,8 +770,8 @@ Remove from the participant WS message handler section:
 - [ ] **Step 5: Remove unused imports and constants**
 
 In `features/ws/daemon_protocol.py`, remove:
-- `MSG_POLL_CREATE` (line 14)
-- `MSG_POLL_OPEN` (line 15)
+- `MSG_QUIZ_CREATE` (line 14)
+- `MSG_QUIZ_OPEN` (line 15)
 - `MSG_SCORE_AWARD` (line 68)
 - `MSG_WORDCLOUD_STATE_SYNC` (line 65)
 
@@ -785,26 +785,26 @@ Run: `pytest tests/ -v --tb=short -k "not docker"`
 
 ```bash
 git add features/ws/router.py features/ws/daemon_protocol.py
-git commit -m "refactor: remove poll/score/wordcloud-sync handlers from Railway, add score mirror"
+git commit -m "refactor: remove quiz/score/wordcloud-sync handlers from Railway, add score mirror"
 ```
 
 ---
 
-## Task 9: Railway — remove poll + leaderboard + scores files
+## Task 9: Railway — remove quiz + leaderboard + scores files
 
 **Files:**
-- Delete: `features/poll/router.py`, `features/poll/state_builder.py`, `features/poll/__init__.py`
+- Delete: `features/quiz/router.py`, `features/quiz/state_builder.py`, `features/quiz/__init__.py`
 - Delete: `features/leaderboard/router.py`, `features/leaderboard/state_builder.py`, `features/leaderboard/__init__.py`
 - Delete: `features/scores/router.py`, `features/scores/__init__.py`
 - Modify: `main.py` (lines 26, 180, 185 — router mounts)
-- Modify: `core/state.py` (remove poll fields, add_score, leaderboard_active)
+- Modify: `core/state.py` (remove quiz fields, add_score, leaderboard_active)
 - Modify: `core/messaging.py` (remove broadcast_leaderboard)
-- Modify: `core/state_builder.py` (remove poll + leaderboard state builder registrations)
+- Modify: `core/state_builder.py` (remove quiz + leaderboard state builder registrations)
 
 - [ ] **Step 1: Remove router mounts from `main.py`**
 
 Remove:
-- Poll router import and `app.include_router` (line 26, 180)
+- Quiz router import and `app.include_router` (line 26, 180)
 - Leaderboard router import and `app.include_router` (line 185)
 
 Scores router is not mounted (already dead code), but verify.
@@ -812,15 +812,15 @@ Scores router is not mounted (already dead code), but verify.
 - [ ] **Step 2: Delete feature files**
 
 ```bash
-rm -rf features/poll/ features/leaderboard/ features/scores/
+rm -rf features/quiz/ features/leaderboard/ features/scores/
 ```
 
-- [ ] **Step 3: Remove poll fields from `core/state.py`**
+- [ ] **Step 3: Remove quiz fields from `core/state.py`**
 
 Remove from `__init__` (lines 33-79):
-- `self.poll`, `self.poll_active`, `self.votes`, `self._vote_counts_cache`
-- `self.poll_opened_at`, `self.poll_timer_seconds`, `self.poll_timer_started_at`
-- `self.poll_correct_ids`, `self.vote_times`, `self.quiz_md_content`
+- `self.quiz`, `self.quiz_active`, `self.votes`, `self._vote_counts_cache`
+- `self.quiz_opened_at`, `self.quiz_timer_seconds`, `self.quiz_timer_started_at`
+- `self.quiz_correct_ids`, `self.vote_times`, `self.quiz_md_content`
 - `self.leaderboard_active`
 - `self.add_score()` method (lines 147-148)
 
@@ -832,9 +832,9 @@ Also remove `vote_counts()` method if it exists on AppState.
 
 Delete the `broadcast_leaderboard` function (lines 132-150) and its lazy import of `_build_leaderboard_data`.
 
-- [ ] **Step 5: Remove poll + leaderboard state builder registrations from `core/state_builder.py`**
+- [ ] **Step 5: Remove quiz + leaderboard state builder registrations from `core/state_builder.py`**
 
-Remove imports and registration calls for `features.poll.state_builder` and `features.leaderboard.state_builder`. Keep score reads (`state.scores.get(pid, 0)`) — they read from the mirror.
+Remove imports and registration calls for `features.quiz.state_builder` and `features.leaderboard.state_builder`. Keep score reads (`state.scores.get(pid, 0)`) — they read from the mirror.
 
 - [ ] **Step 6: Run tests**
 
@@ -845,7 +845,7 @@ Fix any remaining import errors. Some tests in `tests/` may reference deleted mo
 
 ```bash
 git add -A
-git commit -m "refactor: remove poll, leaderboard, scores feature packages from Railway"
+git commit -m "refactor: remove quiz, leaderboard, scores feature packages from Railway"
 ```
 
 ---
@@ -914,7 +914,7 @@ git commit -m "refactor: codereview + session use daemon for scoring instead of 
 
 ---
 
-## Task 11: Frontend — participant.js poll migration
+## Task 11: Frontend — participant.js quiz migration
 
 **Files:**
 - Modify: `static/participant.js` (lines 2814-2831, 2862-2863, 3925-3946)
@@ -928,46 +928,46 @@ sendWS('vote', { option_id: optionId });
 sendWS('multi_vote', { option_ids: [...myVote] });
 
 // NEW:
-participantApi('poll/vote', { option_id: optionId });
-participantApi('poll/vote', { option_ids: [...myVote] });
+participantApi('quiz/vote', { option_id: optionId });
+participantApi('quiz/vote', { option_ids: [...myVote] });
 ```
 
 - [ ] **Step 2: Add broadcast event handlers**
 
 In the WS message handler switch statement, add cases:
 ```javascript
-case 'poll_opened':
-    // Reset vote state, show poll
-    currentPoll = msg.poll;
-    pollActive = true;
-    myVote = currentPoll.multi ? new Set() : null;
-    pollResult = null;
-    renderPollScreen();
+case 'quiz_opened':
+    // Reset vote state, show quiz
+    currentQuiz = msg.quiz;
+    quizActive = true;
+    myVote = currentQuiz.multi ? new Set() : null;
+    quizResult = null;
+    renderQuizScreen();
     break;
 
-case 'poll_closed':
-    pollActive = false;
+case 'quiz_closed':
+    quizActive = false;
     // Show results with vote_counts
-    renderPollResults(msg.vote_counts, msg.total_votes);
+    renderQuizResults(msg.vote_counts, msg.total_votes);
     break;
 
-case 'poll_correct_revealed':
+case 'quiz_correct_revealed':
     // Extract own data from unpersonalized broadcast
-    pollResult = {
+    quizResult = {
         correct_ids: msg.correct_ids,
         voted_ids: msg.votes[myUUID] || [],
         score: (msg.scores[myUUID] || 0) - (myScoreBefore || 0),
     };
-    renderPollResult(pollResult);
+    renderQuizResult(quizResult);
     break;
 
-case 'poll_cleared':
-    currentPoll = null;
-    pollActive = false;
-    renderPollScreen();
+case 'quiz_cleared':
+    currentQuiz = null;
+    quizActive = false;
+    renderQuizScreen();
     break;
 
-case 'poll_timer_started':
+case 'quiz_timer_started':
     startCountdown(msg.seconds, msg.started_at);
     break;
 
@@ -991,13 +991,13 @@ case 'leaderboard_hide':
 
 Remove handlers for:
 - `vote_update` (lines 2814-2816) — no more live vote counts
-- `result` (lines 2823-2831) — replaced by `poll_correct_revealed`
+- `result` (lines 2823-2831) — replaced by `quiz_correct_revealed`
 - `leaderboard` (lines 2862-2863) — replaced by `leaderboard_revealed`
 
 - [ ] **Step 4: Test manually in browser**
 
 Open participant page, verify:
-- Poll appears when host creates/opens
+- Quiz appears when host creates/opens
 - Voting works via REST
 - Results show after close
 - Correct answer reveal shows own score
@@ -1007,19 +1007,19 @@ Open participant page, verify:
 
 ```bash
 git add static/participant.js
-git commit -m "feat: switch participant poll/leaderboard from WS to REST + broadcast events"
+git commit -m "feat: switch participant quiz/leaderboard from WS to REST + broadcast events"
 ```
 
 ---
 
-## Task 12: Frontend — host.js poll + leaderboard migration
+## Task 12: Frontend — host.js quiz + leaderboard migration
 
 **Files:**
 - Modify: `static/host.js` (lines 169, 1655, 1683, 1719, 1727, 1991, 3076, 3078)
 
-- [ ] **Step 1: Switch poll API calls to daemon localhost**
+- [ ] **Step 1: Switch quiz API calls to daemon localhost**
 
-All poll API calls in host.js currently use `fetch(API('/poll/...'))` where `API()` builds Railway URLs. Change to use daemon localhost:1234 URLs.
+All quiz API calls in host.js currently use `fetch(API('/quiz/...'))` where `API()` builds Railway URLs. Change to use daemon localhost:1234 URLs.
 
 Check the host.js pattern — it may already have a `daemonApi()` helper or similar. If the host page loads from daemon localhost, the existing `API()` helper may already point to the right place. Verify and adjust.
 
@@ -1033,7 +1033,7 @@ Change:
 - [ ] **Step 3: Add broadcast event handlers for host WS**
 
 Add handlers in host WS message processing for:
-- `poll_opened`, `poll_closed`, `poll_correct_revealed`, `poll_cleared`, `poll_timer_started`
+- `quiz_opened`, `quiz_closed`, `quiz_correct_revealed`, `quiz_cleared`, `quiz_timer_started`
 - `scores_updated` — update score displays
 - `leaderboard_revealed`, `leaderboard_hide`
 
@@ -1042,7 +1042,7 @@ These arrive via the host browser WS connection (daemon pushes directly via `sen
 - [ ] **Step 4: Test manually**
 
 Open host panel at `localhost:1234/host/{session}`, verify:
-- Create poll → broadcast to participants
+- Create quiz → broadcast to participants
 - Open/close/reveal/timer all work
 - Leaderboard show/hide works
 - Score reset works
@@ -1051,7 +1051,7 @@ Open host panel at `localhost:1234/host/{session}`, verify:
 
 ```bash
 git add static/host.js
-git commit -m "feat: switch host poll/leaderboard from Railway to daemon localhost"
+git commit -m "feat: switch host quiz/leaderboard from Railway to daemon localhost"
 ```
 
 ---
@@ -1067,8 +1067,8 @@ git commit -m "feat: switch host poll/leaderboard from Railway to daemon localho
 Run: `pytest tests/ -v --tb=short -k "not docker" 2>&1 | head -100`
 
 Look for:
-- ImportError from `features.poll`, `features.leaderboard`, `features.scores`
-- Tests that reference `state.add_score`, `state.poll`, `state.leaderboard_active`
+- ImportError from `features.quiz`, `features.leaderboard`, `features.scores`
+- Tests that reference `state.add_score`, `state.quiz`, `state.leaderboard_active`
 - Tests checking for `score_award` write-back events
 
 Fix or remove broken tests.
@@ -1086,7 +1086,7 @@ Run: `python3 -c "from daemon.__main__ import *; print('imports OK')"`
 
 ```bash
 git add -A
-git commit -m "test: fix tests for poll/scores/leaderboard migration"
+git commit -m "test: fix tests for quiz/scores/leaderboard migration"
 ```
 
 ---

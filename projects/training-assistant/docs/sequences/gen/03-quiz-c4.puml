@@ -1,9 +1,9 @@
 @startuml
-!define DIAGRAM_ID Poll_And_Quiz___C4_Container_View
+!define DIAGRAM_ID Quiz___C4_Container_View
 !include <C4/C4_Container>
 
-title Poll And Quiz — C4 Container View
-caption <color:gray>Generated 2026-04-17 from docs/sequences/extracted/03-poll-and-quiz.puml</color>
+title Quiz — C4 Container View
+caption <color:gray>Generated 2026-04-17 from docs/sequences/extracted/03-quiz.puml</color>
 LAYOUT_WITH_LEGEND()
 
 Person(host, "Host", "Controls the session and slides")
@@ -17,7 +17,7 @@ System_Boundary(workshop, "Workshop Tool") {
 Rel(host, daemon, "DELETE /api/{session_id}/host/scores, GET /host/{session_id}, GET /api/{session_id}/host/state, +5 more", "REST")
 Rel(participant, railway, "GET /{session_id}/", "REST")
 Rel(participant, daemon, "POST /api/participant/register, GET /api/participant/state, GET /{session_id}/api/slides, +2 more", "REST")
-Rel(daemon, host, "participant_list_updated, poll_ai_generated, poll_opened, +3 more", "WS push")
-Rel(daemon, participant, "active_participants_count_updated, activity_updated, poll_opened, +3 more", "WS push")
+Rel(daemon, host, "participant_list_updated, quiz_ai_generated, quiz_opened, +3 more", "WS push")
+Rel(daemon, participant, "active_participants_count_updated, activity_updated, quiz_opened, +3 more", "WS push")
 
 @enduml

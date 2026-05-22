@@ -1,31 +1,31 @@
-# Poll Index-Based Voting Implementation Plan
+# Quiz Index-Based Voting Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace per-option string IDs with 0-based integer indices throughout the poll API — participants send `options: list[int]`, receive `options: list[str]`, and all downstream fields (vote_counts, correct_indices) use positional integers.
+**Goal:** Replace per-option string IDs with 0-based integer indices throughout the quiz API — participants send `options: list[int]`, receive `options: list[str]`, and all downstream fields (vote_counts, correct_indices) use positional integers.
 
-**Architecture:** Bottom-up — rewrite `PollState` core first, then propagate upward through routers → WS messages → Pydantic response models → YAML contracts → frontend. Each task commits a coherent slice. Backend tasks 1-7 can be verified with `pytest tests/daemon/`. Frontend tasks 9-10 require browser testing.
+**Architecture:** Bottom-up — rewrite `QuizState` core first, then propagate upward through routers → WS messages → Pydantic response models → YAML contracts → frontend. Each task commits a coherent slice. Backend tasks 1-7 can be verified with `pytest tests/daemon/`. Frontend tasks 9-10 require browser testing.
 
 **Tech Stack:** Python/FastAPI/Pydantic (backend), vanilla JS (frontend), AsyncAPI YAML + OpenAPI YAML (contracts), pytest (tests).
 
 ---
 
-## Task 1: Rewrite PollState to index-based
+## Task 1: Rewrite QuizState to index-based
 
 **Files:**
-- Modify: `daemon/poll/state.py`
-- Modify: `tests/daemon/test_poll_state.py`
+- Modify: `daemon/quiz/state.py`
+- Modify: `tests/daemon/test_quiz_state.py`
 
-### Step 1.1 — Rewrite `test_poll_state.py` with index-based expectations
+### Step 1.1 — Rewrite `test_quiz_state.py` with index-based expectations
 
 Replace the entire file content:
 
 ```python
-"""Tests for daemon/poll/state.py — PollState singleton."""
+"""Tests for daemon/quiz/state.py — QuizState singleton."""
 import pytest
 from datetime import datetime, timezone, timedelta
 
-from daemon.poll.state import PollState, _MAX_POINTS, _MIN_POINTS, _SLOWEST_MULTIPLIER
+from daemon.quiz.state import QuizState, _MAX_POINTS, _MIN_POINTS, _SLOWEST_MULTIPLIER
 
 
 class MockScores:
@@ -39,65 +39,65 @@ class MockScores:
         return dict(self.scores)
 
 
-def _make_poll(ps, multi=False, correct_count=None):
-    ps.create_poll("Test?", ["A", "B", "C"], multi=multi, correct_count=correct_count)
-    ps.open_poll(lambda: None)
+def _make_quiz(ps, multi=False, correct_count=None):
+    ps.create_quiz("Test?", ["A", "B", "C"], multi=multi, correct_count=correct_count)
+    ps.open_quiz(lambda: None)
 
 
-# ── create_poll ──────────────────────────────────────────────────────────────
+# ── create_quiz ──────────────────────────────────────────────────────────────
 
-def test_create_poll():
-    ps = PollState()
-    _make_poll(ps)
-    assert ps.poll is not None
-    assert ps.poll["question"] == "Test?"
-    assert ps.poll["options"] == ["A", "B", "C"]
-    assert ps.poll_active is True
+def test_create_quiz():
+    ps = QuizState()
+    _make_quiz(ps)
+    assert ps.quiz is not None
+    assert ps.quiz["question"] == "Test?"
+    assert ps.quiz["options"] == ["A", "B", "C"]
+    assert ps.quiz_active is True
     assert ps.votes == {}
-    assert ps.poll_correct_indices is None
+    assert ps.quiz_correct_indices is None
 
 
-def test_create_poll_clears_previous_state():
-    ps = PollState()
-    _make_poll(ps)
+def test_create_quiz_clears_previous_state():
+    ps = QuizState()
+    _make_quiz(ps)
     ps.cast_vote("pid1", option_indices=[0])
-    result = ps.create_poll("New?", ["X"])
+    result = ps.create_quiz("New?", ["X"])
     assert ps.votes == {}
-    assert ps.poll_active is False
+    assert ps.quiz_active is False
     assert result["question"] == "New?"
 
 
-def test_create_poll_with_correct_count_zero():
+def test_create_quiz_with_correct_count_zero():
     """correct_count=0 must be stored — not filtered by 'if correct_count:'"""
-    ps = PollState()
-    ps.create_poll("Q?", ["A"], correct_count=0)
-    assert "correct_count" in ps.poll
-    assert ps.poll["correct_count"] == 0
+    ps = QuizState()
+    ps.create_quiz("Q?", ["A"], correct_count=0)
+    assert "correct_count" in ps.quiz
+    assert ps.quiz["correct_count"] == 0
 
 
-# ── open_poll ────────────────────────────────────────────────────────────────
+# ── open_quiz ────────────────────────────────────────────────────────────────
 
-def test_open_poll():
-    ps = PollState()
-    ps.create_poll("Q?", ["A"])
+def test_open_quiz():
+    ps = QuizState()
+    ps.create_quiz("Q?", ["A"])
     ps.votes["old"] = {"option_indices": [0], "voted_at": "2024-01-01T00:00:00+00:00"}
     snapshot_called = []
-    ps.open_poll(lambda: snapshot_called.append(True))
-    assert ps.poll_active is True
+    ps.open_quiz(lambda: snapshot_called.append(True))
+    assert ps.quiz_active is True
     assert ps.votes == {}
-    assert ps.poll_opened_at is not None
+    assert ps.quiz_opened_at is not None
     assert snapshot_called == [True]
 
 
-# ── close_poll ───────────────────────────────────────────────────────────────
+# ── close_quiz ───────────────────────────────────────────────────────────────
 
-def test_close_poll():
-    ps = PollState()
-    _make_poll(ps)
+def test_close_quiz():
+    ps = QuizState()
+    _make_quiz(ps)
     ps.cast_vote("pid1", option_indices=[0])
     ps.cast_vote("pid2", option_indices=[1])
-    result = ps.close_poll()
-    assert ps.poll_active is False
+    result = ps.close_quiz()
+    assert ps.quiz_active is False
     assert result["vote_counts"] == [1, 1, 0]
     assert "total_votes" not in result
 
@@ -105,8 +105,8 @@ def test_close_poll():
 # ── cast_vote single-select ──────────────────────────────────────────────────
 
 def test_cast_vote_single_select():
-    ps = PollState()
-    _make_poll(ps)
+    ps = QuizState()
+    _make_quiz(ps)
     result = ps.cast_vote("pid1", option_indices=[0])
     assert result is True
     assert ps.votes["pid1"]["option_indices"] == [0]
@@ -115,8 +115,8 @@ def test_cast_vote_single_select():
 
 def test_cast_vote_single_select_final():
     """Second vote from same pid must be rejected."""
-    ps = PollState()
-    _make_poll(ps)
+    ps = QuizState()
+    _make_quiz(ps)
     ps.cast_vote("pid1", option_indices=[0])
     result = ps.cast_vote("pid1", option_indices=[1])
     assert result is False
@@ -126,8 +126,8 @@ def test_cast_vote_single_select_final():
 # ── cast_vote multi-select ───────────────────────────────────────────────────
 
 def test_cast_vote_multi_select():
-    ps = PollState()
-    _make_poll(ps, multi=True, correct_count=2)
+    ps = QuizState()
+    _make_quiz(ps, multi=True, correct_count=2)
     result = ps.cast_vote("pid1", option_indices=[0, 1])
     assert result is True
     assert ps.votes["pid1"]["option_indices"] == [0, 1]
@@ -135,8 +135,8 @@ def test_cast_vote_multi_select():
 
 def test_cast_vote_multi_select_toggle():
     """Multi-select votes are final — second attempt rejected."""
-    ps = PollState()
-    _make_poll(ps, multi=True, correct_count=2)
+    ps = QuizState()
+    _make_quiz(ps, multi=True, correct_count=2)
     ps.cast_vote("pid1", option_indices=[0, 1])
     result = ps.cast_vote("pid1", option_indices=[1, 2])
     assert result is False
@@ -145,31 +145,31 @@ def test_cast_vote_multi_select_toggle():
 
 def test_cast_vote_multi_select_over_limit():
     """Reject if more options selected than correct_count."""
-    ps = PollState()
-    _make_poll(ps, multi=True, correct_count=2)
+    ps = QuizState()
+    _make_quiz(ps, multi=True, correct_count=2)
     result = ps.cast_vote("pid1", option_indices=[0, 1, 2])
     assert result is False
 
 
 # ── cast_vote error cases ────────────────────────────────────────────────────
 
-def test_cast_vote_poll_closed():
-    ps = PollState()
-    _make_poll(ps)
-    ps.close_poll()
+def test_cast_vote_quiz_closed():
+    ps = QuizState()
+    _make_quiz(ps)
+    ps.close_quiz()
     result = ps.cast_vote("pid1", option_indices=[0])
     assert result is False
 
 
-def test_cast_vote_no_poll():
-    ps = PollState()
+def test_cast_vote_no_quiz():
+    ps = QuizState()
     result = ps.cast_vote("pid1", option_indices=[0])
     assert result is False
 
 
 def test_cast_vote_invalid_option():
-    ps = PollState()
-    _make_poll(ps)
+    ps = QuizState()
+    _make_quiz(ps)
     result = ps.cast_vote("pid1", option_indices=[99])
     assert result is False
 
@@ -178,11 +178,11 @@ def test_cast_vote_invalid_option():
 
 def test_reveal_correct_speed_scoring():
     """Fastest voter gets ~1000pts, slower voter gets less."""
-    ps = PollState()
-    _make_poll(ps)
+    ps = QuizState()
+    _make_quiz(ps)
 
     base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-    ps.poll_opened_at = base_time
+    ps.quiz_opened_at = base_time
     ps.votes = {
         "fast": {"option_indices": [0], "voted_at": (base_time + timedelta(seconds=2)).isoformat()},
         "slow": {"option_indices": [0], "voted_at": (base_time + timedelta(seconds=8)).isoformat()},
@@ -199,12 +199,12 @@ def test_reveal_correct_speed_scoring():
 
 def test_reveal_correct_multi_proportional():
     """Voter selects 2 of 3 correct + 1 wrong → ratio = (2-1)/3"""
-    ps = PollState()
-    ps.create_poll("Q?", ["A", "B", "C", "D"], multi=True, correct_count=3)
-    ps.open_poll(lambda: None)
+    ps = QuizState()
+    ps.create_quiz("Q?", ["A", "B", "C", "D"], multi=True, correct_count=3)
+    ps.open_quiz(lambda: None)
 
     base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-    ps.poll_opened_at = base_time
+    ps.quiz_opened_at = base_time
     vote_time = (base_time + timedelta(seconds=1)).isoformat()
     # Selects idx 0,1 (correct), idx 3 (wrong) — misses idx 2
     ps.votes = {"pid1": {"option_indices": [0, 1, 3], "voted_at": vote_time}}
@@ -220,8 +220,8 @@ def test_reveal_correct_multi_proportional():
 
 def test_reveal_correct_no_votes():
     """No votes → no scores awarded, no error."""
-    ps = PollState()
-    _make_poll(ps)
+    ps = QuizState()
+    _make_quiz(ps)
     scores = MockScores()
     result = ps.reveal_correct([0], scores)
     assert scores.scores == {}
@@ -231,37 +231,37 @@ def test_reveal_correct_no_votes():
 # ── start_timer ───────────────────────────────────────────────────────────────
 
 def test_start_timer():
-    ps = PollState()
+    ps = QuizState()
     result = ps.start_timer(30)
     assert result["seconds"] == 30
     assert "started_at" in result
-    assert ps.poll_timer_seconds == 30
-    assert ps.poll_timer_started_at is not None
+    assert ps.quiz_timer_seconds == 30
+    assert ps.quiz_timer_started_at is not None
     datetime.fromisoformat(result["started_at"])
 
 
 # ── clear ─────────────────────────────────────────────────────────────────────
 
 def test_clear():
-    ps = PollState()
-    _make_poll(ps)
+    ps = QuizState()
+    _make_quiz(ps)
     ps.cast_vote("pid1", option_indices=[0])
     ps.start_timer(20)
     ps.clear()
-    assert ps.poll is None
-    assert ps.poll_active is False
+    assert ps.quiz is None
+    assert ps.quiz_active is False
     assert ps.votes == {}
-    assert ps.poll_opened_at is None
-    assert ps.poll_correct_indices is None
-    assert ps.poll_timer_seconds is None
-    assert ps.poll_timer_started_at is None
+    assert ps.quiz_opened_at is None
+    assert ps.quiz_correct_indices is None
+    assert ps.quiz_timer_seconds is None
+    assert ps.quiz_timer_started_at is None
 
 
 # ── vote_counts ────────────────────────────────────────────────────────────────
 
 def test_vote_counts_returns_list():
-    ps = PollState()
-    _make_poll(ps)
+    ps = QuizState()
+    _make_quiz(ps)
     ps.cast_vote("pid1", option_indices=[0])
     ps.cast_vote("pid2", option_indices=[1])
     counts = ps.vote_counts()
@@ -269,8 +269,8 @@ def test_vote_counts_returns_list():
 
 
 def test_vote_counts_dirty_flag():
-    ps = PollState()
-    _make_poll(ps)
+    ps = QuizState()
+    _make_quiz(ps)
     ps.cast_vote("pid1", option_indices=[0])
     counts1 = ps.vote_counts()
     assert counts1 == [1, 0, 0]
@@ -286,15 +286,15 @@ def test_vote_counts_dirty_flag():
     assert ps._vote_counts_dirty is False
 
 
-# ── poll_md ───────────────────────────────────────────────────────────────────
+# ── quiz_md ───────────────────────────────────────────────────────────────────
 
-def test_append_to_poll_md():
-    ps = PollState()
-    _make_poll(ps)
+def test_append_to_quiz_md():
+    ps = QuizState()
+    _make_quiz(ps)
     ps.cast_vote("pid1", option_indices=[0])
     ps.reveal_correct([0], MockScores())
 
-    md = ps.poll_md_content
+    md = ps.quiz_md_content
     assert "### Test?" in md
     assert "- [✓] A" in md
     assert "- [✗] B" in md
@@ -304,16 +304,16 @@ def test_append_to_poll_md():
 - [ ] **Step 1.2 — Run tests to verify they fail**
 
 ```bash
-arch -arm64 uv run --extra dev --extra daemon pytest tests/daemon/test_poll_state.py -v 2>&1 | tail -30
+arch -arm64 uv run --extra dev --extra daemon pytest tests/daemon/test_quiz_state.py -v 2>&1 | tail -30
 ```
 Expected: multiple FAILs (old API still in state.py).
 
-- [ ] **Step 1.3 — Rewrite `daemon/poll/state.py`**
+- [ ] **Step 1.3 — Rewrite `daemon/quiz/state.py`**
 
 Replace the full file:
 
 ```python
-"""Poll state singleton — daemon owns all poll lifecycle."""
+"""Quiz state singleton — daemon owns all quiz lifecycle."""
 from datetime import datetime, timezone
 
 _MAX_POINTS = 1000
@@ -321,66 +321,66 @@ _MIN_POINTS = 500
 _SLOWEST_MULTIPLIER = 3
 
 
-class PollState:
+class QuizState:
     def __init__(self):
-        self.poll: dict | None = None
-        self.poll_active: bool = False
+        self.quiz: dict | None = None
+        self.quiz_active: bool = False
         self.votes: dict[str, dict] = {}  # uuid → {"option_indices": list[int], "voted_at": str ISO}
-        self.poll_opened_at: datetime | None = None
-        self.poll_correct_indices: list[int] | None = None
-        self.poll_timer_seconds: int | None = None
-        self.poll_timer_started_at: datetime | None = None
+        self.quiz_opened_at: datetime | None = None
+        self.quiz_correct_indices: list[int] | None = None
+        self.quiz_timer_seconds: int | None = None
+        self.quiz_timer_started_at: datetime | None = None
         self._vote_counts_dirty: bool = True
         self._vote_counts_cache: list[int] | None = None
-        self.poll_md_content: str = ""
+        self.quiz_md_content: str = ""
 
-    def create_poll(self, question: str, options: list[str], multi: bool = False,
+    def create_quiz(self, question: str, options: list[str], multi: bool = False,
                     correct_count: int | None = None, source: str | None = None,
                     page: str | None = None) -> dict:
         import uuid as _uuid
-        self.poll = {
+        self.quiz = {
             "id": _uuid.uuid4().hex[:8],
             "question": question,
             "options": options,
             "multi": multi,
         }
         if correct_count is not None:
-            self.poll["correct_count"] = correct_count
+            self.quiz["correct_count"] = correct_count
         if source:
-            self.poll["source"] = source
+            self.quiz["source"] = source
         if page:
-            self.poll["page"] = page
-        self.poll_active = False
+            self.quiz["page"] = page
+        self.quiz_active = False
         self.votes.clear()
-        self.poll_correct_indices = None
-        self.poll_timer_seconds = None
-        self.poll_timer_started_at = None
+        self.quiz_correct_indices = None
+        self.quiz_timer_seconds = None
+        self.quiz_timer_started_at = None
         self._vote_counts_dirty = True
-        return dict(self.poll)
+        return dict(self.quiz)
 
-    def open_poll(self, scores_snapshot_fn) -> None:
-        self.poll_active = True
-        self.poll_opened_at = datetime.now(timezone.utc)
+    def open_quiz(self, scores_snapshot_fn) -> None:
+        self.quiz_active = True
+        self.quiz_opened_at = datetime.now(timezone.utc)
         self.votes.clear()
         self._vote_counts_dirty = True
         scores_snapshot_fn()
 
-    def close_poll(self) -> dict:
-        self.poll_active = False
+    def close_quiz(self) -> dict:
+        self.quiz_active = False
         counts = self.vote_counts()
         return {"vote_counts": counts}
 
     def cast_vote(self, pid: str, option_indices: list[int] | None = None) -> bool:
-        if not self.poll or not self.poll_active:
+        if not self.quiz or not self.quiz_active:
             return False
         if pid in self.votes:
             return False
         if option_indices is None or not isinstance(option_indices, list):
             return False
-        n = len(self.poll["options"])
-        is_multi = self.poll.get("multi", False)
+        n = len(self.quiz["options"])
+        is_multi = self.quiz.get("multi", False)
         if is_multi:
-            correct_count = self.poll.get("correct_count")
+            correct_count = self.quiz.get("correct_count")
             max_allowed = correct_count if correct_count else n
             if (len(option_indices) > max_allowed
                     or len(set(option_indices)) != len(option_indices)
@@ -396,12 +396,12 @@ class PollState:
 
     def reveal_correct(self, correct_indices: list[int], scores_obj) -> dict:
         correct_set = set(correct_indices)
-        n = len(self.poll["options"]) if self.poll else 0
+        n = len(self.quiz["options"]) if self.quiz else 0
         all_indices = set(range(n))
         wrong_set = all_indices - correct_set
-        multi = self.poll.get("multi", False) if self.poll else False
+        multi = self.quiz.get("multi", False) if self.quiz else False
         now = datetime.now(timezone.utc)
-        opened_at = self.poll_opened_at or now
+        opened_at = self.quiz_opened_at or now
 
         correct_voters = set()
         for pid, vote in self.votes.items():
@@ -450,8 +450,8 @@ class PollState:
             if pts > 0:
                 scores_obj.add_score(pid, pts)
 
-        self.poll_correct_indices = list(correct_set)
-        self._append_to_poll_md(correct_set)
+        self.quiz_correct_indices = list(correct_set)
+        self._append_to_quiz_md(correct_set)
         return {
             "correct_indices": list(correct_set),
             "scores": scores_obj.snapshot(),
@@ -459,27 +459,27 @@ class PollState:
         }
 
     def start_timer(self, seconds: int) -> dict:
-        self.poll_timer_seconds = seconds
-        self.poll_timer_started_at = datetime.now(timezone.utc)
+        self.quiz_timer_seconds = seconds
+        self.quiz_timer_started_at = datetime.now(timezone.utc)
         return {
             "seconds": seconds,
-            "started_at": self.poll_timer_started_at.isoformat(),
+            "started_at": self.quiz_timer_started_at.isoformat(),
         }
 
     def clear(self) -> None:
-        self.poll = None
-        self.poll_active = False
+        self.quiz = None
+        self.quiz_active = False
         self.votes.clear()
-        self.poll_opened_at = None
-        self.poll_correct_indices = None
-        self.poll_timer_seconds = None
-        self.poll_timer_started_at = None
+        self.quiz_opened_at = None
+        self.quiz_correct_indices = None
+        self.quiz_timer_seconds = None
+        self.quiz_timer_started_at = None
         self._vote_counts_dirty = True
 
     def vote_counts(self) -> list[int]:
         if not self._vote_counts_dirty and self._vote_counts_cache is not None:
             return self._vote_counts_cache
-        n = len(self.poll["options"]) if self.poll else 0
+        n = len(self.quiz["options"]) if self.quiz else 0
         counts = [0] * n
         for vote in self.votes.values():
             for idx in vote["option_indices"]:
@@ -489,84 +489,84 @@ class PollState:
         self._vote_counts_dirty = False
         return counts
 
-    def _append_to_poll_md(self, correct_set: set[int]):
-        if not self.poll:
+    def _append_to_quiz_md(self, correct_set: set[int]):
+        if not self.quiz:
             return
-        lines = [f"### {self.poll['question']}\n"]
-        for i, text in enumerate(self.poll["options"]):
+        lines = [f"### {self.quiz['question']}\n"]
+        for i, text in enumerate(self.quiz["options"]):
             marker = "✓" if i in correct_set else "✗"
             lines.append(f"- [{marker}] {text}")
         lines.append("")
-        self.poll_md_content += "\n".join(lines) + "\n"
+        self.quiz_md_content += "\n".join(lines) + "\n"
 
 
-poll_state = PollState()
+quiz_state = QuizState()
 ```
 
 - [ ] **Step 1.4 — Run tests to verify they pass**
 
 ```bash
-arch -arm64 uv run --extra dev --extra daemon pytest tests/daemon/test_poll_state.py -v 2>&1 | tail -20
+arch -arm64 uv run --extra dev --extra daemon pytest tests/daemon/test_quiz_state.py -v 2>&1 | tail -20
 ```
 Expected: all PASS.
 
 - [ ] **Step 1.5 — Commit**
 
 ```bash
-git add daemon/poll/state.py tests/daemon/test_poll_state.py
-git commit -m "refactor(poll): replace option IDs with 0-based indices in PollState"
+git add daemon/quiz/state.py tests/daemon/test_quiz_state.py
+git commit -m "refactor(quiz): replace option IDs with 0-based indices in QuizState"
 ```
 
 ---
 
-## Task 2: Update poll router models and fix pre-existing test bugs
+## Task 2: Update quiz router models and fix pre-existing test bugs
 
 **Files:**
-- Modify: `daemon/poll/router.py`
-- Modify: `tests/daemon/test_poll_router.py`
+- Modify: `daemon/quiz/router.py`
+- Modify: `tests/daemon/test_quiz_router.py`
 
-- [ ] **Step 2.1 — Rewrite `tests/daemon/test_poll_router.py`**
+- [ ] **Step 2.1 — Rewrite `tests/daemon/test_quiz_router.py`**
 
 Replace the full file:
 
 ```python
-"""Tests for daemon poll router — participant + host endpoints."""
+"""Tests for daemon quiz router — participant + host endpoints."""
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from daemon.poll.state import PollState
+from daemon.quiz.state import QuizState
 from daemon.scores import Scores
-from daemon.poll.router import participant_router, host_router, poll_md_router
+from daemon.quiz.router import participant_router, host_router, quiz_md_router
 from daemon.participant.state import ParticipantState
 
 _SAMPLE_OPTIONS = ["Option A", "Option B", "Option C"]
 
 
 @pytest.fixture
-def fresh_poll_state():
-    ps = PollState()
-    with patch("daemon.poll.router.poll_state", ps):
+def fresh_quiz_state():
+    ps = QuizState()
+    with patch("daemon.quiz.router.quiz_state", ps):
         yield ps
 
 
 @pytest.fixture
 def fresh_scores():
     s = Scores()
-    with patch("daemon.poll.router.scores", s):
+    with patch("daemon.quiz.router.scores", s):
         yield s
 
 
 @pytest.fixture
 def mock_broadcast():
-    with patch("daemon.poll.router.broadcast") as mock:
+    with patch("daemon.quiz.router.broadcast") as mock:
         yield mock
 
 
 @pytest.fixture
 def mock_notify_host():
-    with patch("daemon.poll.router.notify_host", new_callable=AsyncMock) as mock:
+    with patch("daemon.quiz.router.notify_host", new_callable=AsyncMock) as mock:
         yield mock
 
 
@@ -574,33 +574,33 @@ def mock_notify_host():
 def mock_participant_state():
     ps = ParticipantState()
     ps.current_activity = "none"
-    with patch("daemon.poll.router.participant_state", ps):
+    with patch("daemon.quiz.router.participant_state", ps):
         yield ps
 
 
 @pytest.fixture
-def participant_client(fresh_poll_state, fresh_scores):
+def participant_client(fresh_quiz_state, fresh_scores):
     app = FastAPI()
     app.include_router(participant_router)
     return TestClient(app)
 
 
 @pytest.fixture
-def host_client(fresh_poll_state, fresh_scores, mock_broadcast, mock_notify_host, mock_participant_state):
+def host_client(fresh_quiz_state, fresh_scores, mock_broadcast, mock_notify_host, mock_participant_state):
     app = FastAPI()
     app.include_router(host_router)
-    app.include_router(poll_md_router)
+    app.include_router(quiz_md_router)
     return TestClient(app)
 
 
-def _create_and_open_poll(client, fresh_poll_state, fresh_scores):
-    resp = client.post("/api/test-session/host/poll", json={
+def _create_and_open_quiz(client, fresh_quiz_state, fresh_scores):
+    resp = client.post("/api/test-session/host/quiz", json={
         "question": "Which option?",
         "options": _SAMPLE_OPTIONS,
         "multi": False,
     })
     assert resp.status_code == 200
-    client.post("/api/test-session/host/poll/open", json={})
+    client.post("/api/test-session/host/quiz/open", json={})
 
 
 # ──────────────────────────────────────────────
@@ -608,31 +608,31 @@ def _create_and_open_poll(client, fresh_poll_state, fresh_scores):
 # ──────────────────────────────────────────────
 
 class TestParticipantVote:
-    def test_cast_vote_single(self, participant_client, fresh_poll_state):
-        fresh_poll_state.create_poll("Q?", _SAMPLE_OPTIONS)
-        fresh_poll_state.open_poll(lambda: None)
+    def test_cast_vote_single(self, participant_client, fresh_quiz_state):
+        fresh_quiz_state.create_quiz("Q?", _SAMPLE_OPTIONS)
+        fresh_quiz_state.open_quiz(lambda: None)
 
         resp = participant_client.post(
-            "/api/participant/poll/vote",
+            "/api/participant/quiz/vote",
             json={"options": [0]},
             headers={"X-Participant-ID": "pid1"},
         )
         assert resp.status_code == 204
 
-    def test_cast_vote_multi(self, participant_client, fresh_poll_state):
-        fresh_poll_state.create_poll("Q?", _SAMPLE_OPTIONS, multi=True, correct_count=2)
-        fresh_poll_state.open_poll(lambda: None)
+    def test_cast_vote_multi(self, participant_client, fresh_quiz_state):
+        fresh_quiz_state.create_quiz("Q?", _SAMPLE_OPTIONS, multi=True, correct_count=2)
+        fresh_quiz_state.open_quiz(lambda: None)
 
         resp = participant_client.post(
-            "/api/participant/poll/vote",
+            "/api/participant/quiz/vote",
             json={"options": [0, 1]},
             headers={"X-Participant-ID": "pid1"},
         )
         assert resp.status_code == 204
 
-    def test_cast_vote_rejected(self, participant_client, fresh_poll_state):
+    def test_cast_vote_rejected(self, participant_client, fresh_quiz_state):
         resp = participant_client.post(
-            "/api/participant/poll/vote",
+            "/api/participant/quiz/vote",
             json={"options": [0]},
             headers={"X-Participant-ID": "pid1"},
         )
@@ -640,7 +640,7 @@ class TestParticipantVote:
 
     def test_cast_vote_no_pid(self, participant_client):
         resp = participant_client.post(
-            "/api/participant/poll/vote",
+            "/api/participant/quiz/vote",
             json={"options": [0]},
         )
         assert resp.status_code == 400
@@ -650,63 +650,63 @@ class TestParticipantVote:
 # Host endpoint tests
 # ──────────────────────────────────────────────
 
-class TestHostCreatePoll:
-    def test_create_poll(self, host_client, fresh_poll_state, mock_notify_host):
-        resp = host_client.post("/api/test-session/host/poll", json={
+class TestHostCreateQuiz:
+    def test_create_quiz(self, host_client, fresh_quiz_state, mock_notify_host):
+        resp = host_client.post("/api/test-session/host/quiz", json={
             "question": "Best framework?",
             "options": _SAMPLE_OPTIONS,
         })
         assert resp.status_code == 200
         data = resp.json()
         assert data["ok"] is True
-        assert data["poll"]["question"] == "Best framework?"
-        assert data["poll"]["options"] == _SAMPLE_OPTIONS
+        assert data["quiz"]["question"] == "Best framework?"
+        assert data["quiz"]["options"] == _SAMPLE_OPTIONS
         mock_notify_host.assert_called_once()
         msg = mock_notify_host.call_args[0][0]
-        assert msg.type == "poll_ai_generated"
+        assert msg.type == "quiz_ai_generated"
 
-    def test_create_poll_activity_gate(self, host_client, mock_participant_state):
+    def test_create_quiz_activity_gate(self, host_client, mock_participant_state):
         mock_participant_state.current_activity = "debate"
-        resp = host_client.post("/api/test-session/host/poll", json={
+        resp = host_client.post("/api/test-session/host/quiz", json={
             "question": "Q?",
             "options": _SAMPLE_OPTIONS,
         })
         assert resp.status_code == 409
 
-    def test_create_poll_string_options(self, host_client):
+    def test_create_quiz_string_options(self, host_client):
         """Options are always strings — sent and returned as-is."""
-        resp = host_client.post("/api/test-session/host/poll", json={
-            "question": "Manual poll?",
+        resp = host_client.post("/api/test-session/host/quiz", json={
+            "question": "Manual quiz?",
             "options": ["Alpha", "Beta", "Gamma"],
         })
         assert resp.status_code == 200
-        poll = resp.json()["poll"]
-        assert poll["options"] == ["Alpha", "Beta", "Gamma"]
+        quiz = resp.json()["quiz"]
+        assert quiz["options"] == ["Alpha", "Beta", "Gamma"]
 
 
-class TestHostOpenPoll:
-    def test_open_poll(self, host_client, fresh_poll_state, mock_broadcast, mock_notify_host):
-        fresh_poll_state.create_poll("Q?", _SAMPLE_OPTIONS)
+class TestHostOpenQuiz:
+    def test_open_quiz(self, host_client, fresh_quiz_state, mock_broadcast, mock_notify_host):
+        fresh_quiz_state.create_quiz("Q?", _SAMPLE_OPTIONS)
 
-        resp = host_client.post("/api/test-session/host/poll/open", json={})
+        resp = host_client.post("/api/test-session/host/quiz/open", json={})
         assert resp.status_code == 204
 
         broadcast_msg = mock_broadcast.call_args_list[0][0][0]
-        assert broadcast_msg.type == "poll_opened"
+        assert broadcast_msg.type == "quiz_opened"
 
         host_msg = mock_notify_host.call_args[0][0]
-        assert host_msg.type == "poll_opened"
+        assert host_msg.type == "quiz_opened"
 
-    def test_open_poll_no_poll(self, host_client):
-        resp = host_client.post("/api/test-session/host/poll/open", json={})
+    def test_open_quiz_no_quiz(self, host_client):
+        resp = host_client.post("/api/test-session/host/quiz/open", json={})
         assert resp.status_code == 400
 
 
-class TestHostClosePoll:
-    def test_close_poll(self, host_client, fresh_poll_state, fresh_scores, mock_broadcast, mock_notify_host):
-        _create_and_open_poll(host_client, fresh_poll_state, fresh_scores)
+class TestHostCloseQuiz:
+    def test_close_quiz(self, host_client, fresh_quiz_state, fresh_scores, mock_broadcast, mock_notify_host):
+        _create_and_open_quiz(host_client, fresh_quiz_state, fresh_scores)
 
-        resp = host_client.post("/api/test-session/host/poll/close", json={})
+        resp = host_client.post("/api/test-session/host/quiz/close", json={})
         assert resp.status_code == 200
         data = resp.json()
         assert data["ok"] is True
@@ -714,74 +714,74 @@ class TestHostClosePoll:
         assert "total_votes" not in data
 
         broadcast_types = [call[0][0].type for call in mock_broadcast.call_args_list]
-        assert "poll_closed" in broadcast_types
+        assert "quiz_closed" in broadcast_types
 
-    def test_close_poll_no_poll(self, host_client):
-        resp = host_client.post("/api/test-session/host/poll/close", json={})
+    def test_close_quiz_no_quiz(self, host_client):
+        resp = host_client.post("/api/test-session/host/quiz/close", json={})
         assert resp.status_code == 400
 
 
 class TestHostRevealCorrect:
-    def test_reveal_correct(self, host_client, fresh_poll_state, fresh_scores, mock_broadcast, mock_notify_host):
-        _create_and_open_poll(host_client, fresh_poll_state, fresh_scores)
+    def test_reveal_correct(self, host_client, fresh_quiz_state, fresh_scores, mock_broadcast, mock_notify_host):
+        _create_and_open_quiz(host_client, fresh_quiz_state, fresh_scores)
 
-        resp = host_client.put("/api/test-session/host/poll/correct", json={"correct_indices": [0]})
+        resp = host_client.put("/api/test-session/host/quiz/correct", json={"correct_indices": [0]})
         assert resp.status_code == 204
 
         broadcast_types = [call[0][0].type for call in mock_broadcast.call_args_list]
-        assert "poll_correct_revealed" in broadcast_types
+        assert "quiz_correct_revealed" in broadcast_types
         assert "scores_updated" in broadcast_types
 
         host_msg_types = [call[0][0].type for call in mock_notify_host.call_args_list]
-        assert "poll_correct_revealed" in host_msg_types
+        assert "quiz_correct_revealed" in host_msg_types
 
-    def test_reveal_correct_no_poll(self, host_client):
-        resp = host_client.put("/api/test-session/host/poll/correct", json={"correct_indices": [0]})
+    def test_reveal_correct_no_quiz(self, host_client):
+        resp = host_client.put("/api/test-session/host/quiz/correct", json={"correct_indices": [0]})
         assert resp.status_code == 400
 
 
 class TestHostStartTimer:
-    def test_start_timer(self, host_client, fresh_poll_state, mock_broadcast, mock_notify_host):
-        fresh_poll_state.create_poll("Q?", _SAMPLE_OPTIONS)
+    def test_start_timer(self, host_client, fresh_quiz_state, mock_broadcast, mock_notify_host):
+        fresh_quiz_state.create_quiz("Q?", _SAMPLE_OPTIONS)
 
-        resp = host_client.post("/api/test-session/host/poll/timer", json={"seconds": 45})
+        resp = host_client.post("/api/test-session/host/quiz/timer", json={"seconds": 45})
         assert resp.status_code == 204
 
         broadcast_msg = mock_broadcast.call_args_list[0][0][0]
-        assert broadcast_msg.type == "poll_timer_started"
+        assert broadcast_msg.type == "quiz_timer_started"
         assert broadcast_msg.seconds == 45
 
-    def test_start_timer_no_poll(self, host_client):
-        resp = host_client.post("/api/test-session/host/poll/timer", json={"seconds": 30})
+    def test_start_timer_no_quiz(self, host_client):
+        resp = host_client.post("/api/test-session/host/quiz/timer", json={"seconds": 30})
         assert resp.status_code == 400
 
 
-class TestHostDeletePoll:
-    def test_delete_poll(self, host_client, fresh_poll_state, mock_participant_state, mock_broadcast, mock_notify_host):
-        fresh_poll_state.create_poll("Q?", _SAMPLE_OPTIONS)
+class TestHostDeleteQuiz:
+    def test_delete_quiz(self, host_client, fresh_quiz_state, mock_participant_state, mock_broadcast, mock_notify_host):
+        fresh_quiz_state.create_quiz("Q?", _SAMPLE_OPTIONS)
 
-        resp = host_client.delete("/api/test-session/host/poll")
+        resp = host_client.delete("/api/test-session/host/quiz")
         assert resp.status_code == 204
-        assert fresh_poll_state.poll is None
+        assert fresh_quiz_state.quiz is None
         assert mock_participant_state.current_activity == "none"
 
         broadcast_types = [call[0][0].type for call in mock_broadcast.call_args_list]
-        assert "poll_cleared" in broadcast_types
+        assert "quiz_cleared" in broadcast_types
         assert "activity_updated" in broadcast_types
 
 
-class TestGetPollMd:
-    def test_get_poll_md(self, host_client, fresh_poll_state):
-        fresh_poll_state.poll_md_content = "### Some quiz\n- [✓] A\n"
+class TestGetQuizMd:
+    def test_get_quiz_md(self, host_client, fresh_quiz_state):
+        fresh_quiz_state.quiz_md_content = "### Some quiz\n- [✓] A\n"
 
-        resp = host_client.get("/api/test-session/poll-md")
+        resp = host_client.get("/api/test-session/quiz-md")
         assert resp.status_code == 200
         data = resp.json()
         assert "content" in data
         assert "Some quiz" in data["content"]
 
-    def test_get_poll_md_empty(self, host_client, fresh_poll_state):
-        resp = host_client.get("/api/test-session/poll-md")
+    def test_get_quiz_md_empty(self, host_client, fresh_quiz_state):
+        resp = host_client.get("/api/test-session/quiz-md")
         assert resp.status_code == 200
         assert resp.json()["content"] == ""
 ```
@@ -789,16 +789,16 @@ class TestGetPollMd:
 - [ ] **Step 2.2 — Run tests to verify they fail**
 
 ```bash
-arch -arm64 uv run --extra dev --extra daemon pytest tests/daemon/test_poll_router.py -v 2>&1 | tail -30
+arch -arm64 uv run --extra dev --extra daemon pytest tests/daemon/test_quiz_router.py -v 2>&1 | tail -30
 ```
 Expected: import errors + FAILs (old router API).
 
-- [ ] **Step 2.3 — Rewrite `daemon/poll/router.py`**
+- [ ] **Step 2.3 — Rewrite `daemon/quiz/router.py`**
 
 Replace the full file:
 
 ```python
-"""Poll endpoints — participant (proxied via Railway) + host (daemon localhost)."""
+"""Quiz endpoints — participant (proxied via Railway) + host (daemon localhost)."""
 import logging
 from typing import Optional
 
@@ -807,16 +807,16 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from daemon.participant.state import participant_state
-from daemon.poll.state import poll_state
+from daemon.quiz.state import quiz_state
 from daemon.scores import scores
 from daemon.ws_messages import (
     ActivityUpdatedMsg,
-    PollAiGeneratedMsg,
-    PollClearedMsg,
-    PollClosedMsg,
-    PollCorrectRevealedMsg,
-    PollOpenedMsg,
-    PollTimerStartedMsg,
+    QuizAiGeneratedMsg,
+    QuizClearedMsg,
+    QuizClosedMsg,
+    QuizCorrectRevealedMsg,
+    QuizOpenedMsg,
+    QuizTimerStartedMsg,
     ScoresUpdatedMsg,
     VoteUpdateMsg,
 )
@@ -833,13 +833,13 @@ class OkResponse(BaseModel):
 class VoteRequest(BaseModel):
     options: list[int]
 
-class CreatePollRequest(BaseModel):
+class CreateQuizRequest(BaseModel):
     question: str = ""
     options: list[str] = []
     multi: bool = False
     correct_count: Optional[int] = None
 
-class PollResponse(BaseModel):
+class QuizResponse(BaseModel):
     id: str
     question: str
     options: list[str]
@@ -848,11 +848,11 @@ class PollResponse(BaseModel):
     source: str | None = None
     page: str | None = None
 
-class CreatePollResponse(BaseModel):
+class CreateQuizResponse(BaseModel):
     ok: bool = True
-    poll: PollResponse
+    quiz: QuizResponse
 
-class ClosePollResponse(BaseModel):
+class CloseQuizResponse(BaseModel):
     ok: bool = True
     vote_counts: list[int]
 
@@ -862,16 +862,16 @@ class RevealCorrectRequest(BaseModel):
 class StartTimerRequest(BaseModel):
     seconds: int = 30
 
-class SetPollStatusRequest(BaseModel):
+class SetQuizStatusRequest(BaseModel):
     open: bool
 
-class PollMdResponse(BaseModel):
+class QuizMdResponse(BaseModel):
     content: str
 
 
 # ── Participant router (proxied via Railway) ──
 
-participant_router = APIRouter(prefix="/api/participant/poll", tags=["poll"])
+participant_router = APIRouter(prefix="/api/participant/quiz", tags=["quiz"])
 
 
 @participant_router.post("/vote", status_code=204)
@@ -881,11 +881,11 @@ async def cast_vote(request: Request, body: VoteRequest):
     if not pid:
         return JSONResponse({"error": "Missing participant ID"}, status_code=400)
 
-    accepted = poll_state.cast_vote(pid, option_indices=body.options)
+    accepted = quiz_state.cast_vote(pid, option_indices=body.options)
     if not accepted:
         return JSONResponse({"error": "Vote rejected"}, status_code=409)
 
-    vote_msg = VoteUpdateMsg(vote_counts=poll_state.vote_counts())
+    vote_msg = VoteUpdateMsg(vote_counts=quiz_state.vote_counts())
     request.state.write_back_events = [broadcast_event(vote_msg)]
     await notify_host(vote_msg)
     return Response(status_code=204)
@@ -893,122 +893,122 @@ async def cast_vote(request: Request, body: VoteRequest):
 
 # ── Host router (called directly on daemon localhost) ──
 
-host_router = APIRouter(prefix="/api/{session_id}/host/poll", tags=["poll"])
+host_router = APIRouter(prefix="/api/{session_id}/host/quiz", tags=["quiz"])
 
 
-@host_router.post("", response_model=CreatePollResponse)
-async def create_poll(body: CreatePollRequest):
-    """Host creates a new poll."""
+@host_router.post("", response_model=CreateQuizResponse)
+async def create_quiz(body: CreateQuizRequest):
+    """Host creates a new quiz."""
     activity = participant_state.current_activity
-    if activity and activity not in ("none", "poll"):
+    if activity and activity not in ("none", "quiz"):
         return JSONResponse({"error": f"Activity {activity} is active"}, status_code=409)
 
-    poll = poll_state.create_poll(
+    quiz = quiz_state.create_quiz(
         body.question,
         body.options,
         body.multi,
         body.correct_count,
     )
-    participant_state.current_activity = "poll"
+    participant_state.current_activity = "quiz"
 
-    await notify_host(PollAiGeneratedMsg(poll=poll))
-    return CreatePollResponse(poll=PollResponse.model_validate(poll))
+    await notify_host(QuizAiGeneratedMsg(quiz=quiz))
+    return CreateQuizResponse(quiz=QuizResponse.model_validate(quiz))
 
 
 @host_router.post("/open", status_code=204)
-async def open_poll():
-    """Host opens the poll for voting."""
-    if not poll_state.poll:
-        return JSONResponse({"error": "No poll"}, status_code=400)
+async def open_quiz():
+    """Host opens the quiz for voting."""
+    if not quiz_state.quiz:
+        return JSONResponse({"error": "No quiz"}, status_code=400)
 
-    poll_state.open_poll(scores.snapshot_base)
-    broadcast(PollOpenedMsg(poll=poll_state.poll))
-    await notify_host(PollOpenedMsg(poll=poll_state.poll))
+    quiz_state.open_quiz(scores.snapshot_base)
+    broadcast(QuizOpenedMsg(quiz=quiz_state.quiz))
+    await notify_host(QuizOpenedMsg(quiz=quiz_state.quiz))
     return Response(status_code=204)
 
 
-@host_router.post("/close", response_model=ClosePollResponse)
-async def close_poll():
-    """Host closes the poll."""
-    if not poll_state.poll:
-        return JSONResponse({"error": "No poll"}, status_code=400)
+@host_router.post("/close", response_model=CloseQuizResponse)
+async def close_quiz():
+    """Host closes the quiz."""
+    if not quiz_state.quiz:
+        return JSONResponse({"error": "No quiz"}, status_code=400)
 
-    result = poll_state.close_poll()
-    closed_msg = PollClosedMsg(vote_counts=result["vote_counts"])
+    result = quiz_state.close_quiz()
+    closed_msg = QuizClosedMsg(vote_counts=result["vote_counts"])
     broadcast(closed_msg)
     await notify_host(closed_msg)
-    return ClosePollResponse(**result)
+    return CloseQuizResponse(**result)
 
 
 @host_router.put("/correct", status_code=204)
 async def reveal_correct(body: RevealCorrectRequest):
     """Host reveals correct answers and awards scores."""
-    if not poll_state.poll:
-        return JSONResponse({"error": "No poll"}, status_code=400)
+    if not quiz_state.quiz:
+        return JSONResponse({"error": "No quiz"}, status_code=400)
 
-    result = poll_state.reveal_correct(body.correct_indices, scores)
-    broadcast(PollCorrectRevealedMsg(correct_indices=result["correct_indices"]))
+    result = quiz_state.reveal_correct(body.correct_indices, scores)
+    broadcast(QuizCorrectRevealedMsg(correct_indices=result["correct_indices"]))
     broadcast(ScoresUpdatedMsg(scores=result["scores"]))
-    await notify_host(PollCorrectRevealedMsg(correct_indices=result["correct_indices"]))
+    await notify_host(QuizCorrectRevealedMsg(correct_indices=result["correct_indices"]))
     await notify_host(ScoresUpdatedMsg(scores=result["scores"]))
     return Response(status_code=204)
 
 
 @host_router.post("/timer", status_code=204)
 async def start_timer(body: StartTimerRequest):
-    """Host starts a countdown timer for the poll."""
-    if not poll_state.poll:
-        return JSONResponse({"error": "No poll"}, status_code=400)
+    """Host starts a countdown timer for the quiz."""
+    if not quiz_state.quiz:
+        return JSONResponse({"error": "No quiz"}, status_code=400)
 
-    result = poll_state.start_timer(body.seconds)
-    broadcast(PollTimerStartedMsg(seconds=result["seconds"]))
-    await notify_host(PollTimerStartedMsg(seconds=result["seconds"]))
+    result = quiz_state.start_timer(body.seconds)
+    broadcast(QuizTimerStartedMsg(seconds=result["seconds"]))
+    await notify_host(QuizTimerStartedMsg(seconds=result["seconds"]))
     return Response(status_code=204)
 
 
-@host_router.put("/status", response_model=OkResponse | ClosePollResponse)
-async def set_poll_status(body: SetPollStatusRequest):
-    """Compatibility: {open: true} → open_poll, {open: false} → close_poll."""
+@host_router.put("/status", response_model=OkResponse | CloseQuizResponse)
+async def set_quiz_status(body: SetQuizStatusRequest):
+    """Compatibility: {open: true} → open_quiz, {open: false} → close_quiz."""
     if body.open:
-        return await open_poll()
+        return await open_quiz()
     else:
-        return await close_poll()
+        return await close_quiz()
 
 
 @host_router.delete("", status_code=204)
-async def delete_poll():
-    """Host deletes the current poll."""
-    poll_state.clear()
+async def delete_quiz():
+    """Host deletes the current quiz."""
+    quiz_state.clear()
     participant_state.current_activity = "none"
-    broadcast(PollClearedMsg())
+    broadcast(QuizClearedMsg())
     broadcast(ActivityUpdatedMsg(current_activity="none"))
-    await notify_host(PollClearedMsg())
+    await notify_host(QuizClearedMsg())
     return Response(status_code=204)
 
 
-# ── Poll history (public) ──
+# ── Quiz history (public) ──
 
-poll_md_router = APIRouter(tags=["poll"])
+quiz_md_router = APIRouter(tags=["quiz"])
 
 
-@poll_md_router.get("/api/{session_id}/poll-md", response_model=PollMdResponse)
-async def get_poll_md():
-    """Return the accumulated poll markdown history."""
-    return PollMdResponse(content=poll_state.poll_md_content)
+@quiz_md_router.get("/api/{session_id}/quiz-md", response_model=QuizMdResponse)
+async def get_quiz_md():
+    """Return the accumulated quiz markdown history."""
+    return QuizMdResponse(content=quiz_state.quiz_md_content)
 ```
 
 - [ ] **Step 2.4 — Run tests**
 
 ```bash
-arch -arm64 uv run --extra dev --extra daemon pytest tests/daemon/test_poll_router.py -v 2>&1 | tail -30
+arch -arm64 uv run --extra dev --extra daemon pytest tests/daemon/test_quiz_router.py -v 2>&1 | tail -30
 ```
 Expected: all PASS (ws_messages still has old types — some tests may fail; fix in Task 3).
 
 - [ ] **Step 2.5 — Commit**
 
 ```bash
-git add daemon/poll/router.py tests/daemon/test_poll_router.py
-git commit -m "refactor(poll): update router to index-based vote API, fix poll_md router name"
+git add daemon/quiz/router.py tests/daemon/test_quiz_router.py
+git commit -m "refactor(quiz): update router to index-based vote API, fix quiz_md router name"
 ```
 
 ---
@@ -1018,21 +1018,21 @@ git commit -m "refactor(poll): update router to index-based vote API, fix poll_m
 **Files:**
 - Modify: `daemon/ws_messages.py`
 
-- [ ] **Step 3.1 — Update `PollClosedMsg`, `PollCorrectRevealedMsg`, and `VoteUpdateMsg`**
+- [ ] **Step 3.1 — Update `QuizClosedMsg`, `QuizCorrectRevealedMsg`, and `VoteUpdateMsg`**
 
 In `daemon/ws_messages.py`, make these targeted edits:
 
-**Replace `PollClosedMsg`:**
+**Replace `QuizClosedMsg`:**
 ```python
-class PollClosedMsg(BaseModel):
-    type: Literal["poll_closed"] = "poll_closed"
+class QuizClosedMsg(BaseModel):
+    type: Literal["quiz_closed"] = "quiz_closed"
     vote_counts: list[int]
 ```
 
-**Replace `PollCorrectRevealedMsg`:**
+**Replace `QuizCorrectRevealedMsg`:**
 ```python
-class PollCorrectRevealedMsg(BaseModel):
-    type: Literal["poll_correct_revealed"] = "poll_correct_revealed"
+class QuizCorrectRevealedMsg(BaseModel):
+    type: Literal["quiz_correct_revealed"] = "quiz_correct_revealed"
     correct_indices: list[int]
 ```
 
@@ -1046,7 +1046,7 @@ class VoteUpdateMsg(BaseModel):
 - [ ] **Step 3.2 — Run full daemon tests**
 
 ```bash
-arch -arm64 uv run --extra dev --extra daemon pytest tests/daemon/test_poll_router.py tests/daemon/test_poll_state.py -v 2>&1 | tail -20
+arch -arm64 uv run --extra dev --extra daemon pytest tests/daemon/test_quiz_router.py tests/daemon/test_quiz_state.py -v 2>&1 | tail -20
 ```
 Expected: all PASS.
 
@@ -1054,7 +1054,7 @@ Expected: all PASS.
 
 ```bash
 git add daemon/ws_messages.py
-git commit -m "refactor(poll): update WS message models to index-based vote_counts and correct_indices"
+git commit -m "refactor(quiz): update WS message models to index-based vote_counts and correct_indices"
 ```
 
 ---
@@ -1064,15 +1064,15 @@ git commit -m "refactor(poll): update WS message models to index-based vote_coun
 **Files:**
 - Modify: `daemon/host_state_router.py`
 
-- [ ] **Step 4.1 — Replace PollOption, PollData, PollQueueOption, PollQueueQuestion, HostStateResponse.vote_counts**
+- [ ] **Step 4.1 — Replace QuizOption, QuizData, QuizQueueOption, QuizQueueQuestion, HostStateResponse.vote_counts**
 
 In `daemon/host_state_router.py`:
 
-**Delete `PollOption` class entirely** (lines `class PollOption(BaseModel): id: str / text: str`).
+**Delete `QuizOption` class entirely** (lines `class QuizOption(BaseModel): id: str / text: str`).
 
-**Replace `PollData`:**
+**Replace `QuizData`:**
 ```python
-class PollData(BaseModel):
+class QuizData(BaseModel):
     id: str
     question: str
     options: list[str]
@@ -1085,11 +1085,11 @@ class PollData(BaseModel):
     correct_indices: list[int] | None = None
 ```
 
-**Delete `PollQueueOption` class entirely.**
+**Delete `QuizQueueOption` class entirely.**
 
-**Replace `PollQueueQuestion`:**
+**Replace `QuizQueueQuestion`:**
 ```python
-class PollQueueQuestion(BaseModel):
+class QuizQueueQuestion(BaseModel):
     question: str
     options: list[str]
     correct_indices: list[int]
@@ -1100,13 +1100,13 @@ class PollQueueQuestion(BaseModel):
 vote_counts: list[int]
 ```
 
-**In `_build_poll_for_host()` function** (around line 295), change `"correct_ids"` to `"correct_indices"` and `ps.poll_correct_ids` to `ps.poll_correct_indices`:
+**In `_build_quiz_for_host()` function** (around line 295), change `"correct_ids"` to `"correct_indices"` and `ps.quiz_correct_ids` to `ps.quiz_correct_indices`:
 ```python
-poll["correct_indices"] = ps.poll_correct_indices
+quiz["correct_indices"] = ps.quiz_correct_indices
 ```
 And change `vote_counts`:
 ```python
-"vote_counts": ps.vote_counts() if ps.poll else [],
+"vote_counts": ps.vote_counts() if ps.quiz else [],
 ```
 
 - [ ] **Step 4.2 — Run daemon tests**
@@ -1120,7 +1120,7 @@ Expected: all PASS (host_state tests may need updating separately).
 
 ```bash
 git add daemon/host_state_router.py
-git commit -m "refactor(poll): update host_state_router to index-based options and correct_indices"
+git commit -m "refactor(quiz): update host_state_router to index-based options and correct_indices"
 ```
 
 ---
@@ -1130,13 +1130,13 @@ git commit -m "refactor(poll): update host_state_router to index-based options a
 **Files:**
 - Modify: `daemon/participant/router.py`
 
-- [ ] **Step 5.1 — Update `PollOption`, `PollData`, and `ParticipantStateResponse` in participant/router.py**
+- [ ] **Step 5.1 — Update `QuizOption`, `QuizData`, and `ParticipantStateResponse` in participant/router.py**
 
-**Delete `PollOption` class** (`class PollOption(BaseModel): id: str / text: str`).
+**Delete `QuizOption` class** (`class QuizOption(BaseModel): id: str / text: str`).
 
-**Replace `PollData`:**
+**Replace `QuizData`:**
 ```python
-class PollData(BaseModel):
+class QuizData(BaseModel):
     id: str
     question: str
     options: list[str]
@@ -1155,15 +1155,15 @@ vote_counts: list[int]
 my_voted_indices: list[int] | None = None
 ```
 
-**In `_build_poll_for_participant()`**, replace `poll["correct_ids"]` and result dict:
+**In `_build_quiz_for_participant()`**, replace `quiz["correct_ids"]` and result dict:
 ```python
-poll["correct_indices"] = ps.poll_correct_indices
+quiz["correct_indices"] = ps.quiz_correct_indices
 ```
 ```python
 result: dict = {
-    "poll": poll,
-    "poll_active": ps.poll_active,
-    "vote_counts": ps.vote_counts() if ps.poll else [],
+    "quiz": quiz,
+    "quiz_active": ps.quiz_active,
+    "vote_counts": ps.vote_counts() if ps.quiz else [],
 }
 my_vote_entry = ps.votes.get(pid)
 if my_vote_entry is not None:
@@ -1178,31 +1178,31 @@ else:
 ```bash
 arch -arm64 uv run --extra dev --extra daemon pytest tests/daemon/test_participant_router.py -v 2>&1 | tail -20
 ```
-Expected: all PASS (participant router tests don't test poll deeply).
+Expected: all PASS (participant router tests don't test quiz deeply).
 
 - [ ] **Step 5.3 — Commit**
 
 ```bash
 git add daemon/participant/router.py
-git commit -m "refactor(poll): update participant state snapshot to index-based poll fields"
+git commit -m "refactor(quiz): update participant state snapshot to index-based quiz fields"
 ```
 
 ---
 
-## Task 6: Update poll queue router
+## Task 6: Update quiz queue router
 
 **Files:**
-- Modify: `daemon/quiz/queue_router.py`
+- Modify: `daemon/quiz_queue/router.py`
 
-- [ ] **Step 6.1 — Update `PollQueueOption`, `PollQueueQuestion`, and `fire_current()`**
+- [ ] **Step 6.1 — Update `QuizQueueOption`, `QuizQueueQuestion`, and `fire_current()`**
 
-In `daemon/quiz/queue_router.py`:
+In `daemon/quiz_queue/router.py`:
 
-**Delete `PollQueueOption` class entirely.**
+**Delete `QuizQueueOption` class entirely.**
 
-**Replace `PollQueueQuestion`:**
+**Replace `QuizQueueQuestion`:**
 ```python
-class PollQueueQuestion(BaseModel):
+class QuizQueueQuestion(BaseModel):
     question: str
     options: list[str]
     correct_indices: list[int]
@@ -1214,7 +1214,7 @@ options = current["options"]  # already list[str]
 correct_count = len(current["correct_indices"])
 multi = correct_count > 1
 
-poll = poll_state.create_poll(
+quiz = quiz_state.create_quiz(
     question=current["question"],
     options=options,
     multi=multi,
@@ -1232,8 +1232,8 @@ Expected: all PASS.
 - [ ] **Step 6.3 — Commit**
 
 ```bash
-git add daemon/quiz/queue_router.py
-git commit -m "refactor(poll): update poll queue router to index-based options and correct_indices"
+git add daemon/quiz_queue/router.py
+git commit -m "refactor(quiz): update quiz queue router to index-based options and correct_indices"
 ```
 
 ---
@@ -1246,12 +1246,12 @@ git commit -m "refactor(poll): update poll queue router to index-based options a
 
 - [ ] **Step 7.1 — Update `__main__.py` snapshot builder**
 
-In `daemon/__main__.py` at the line with `"correct_ids": poll_state.poll_correct_ids`:
+In `daemon/__main__.py` at the line with `"correct_ids": quiz_state.quiz_correct_ids`:
 ```python
-"correct_indices": poll_state.poll_correct_indices,
+"correct_indices": quiz_state.quiz_correct_indices,
 ```
 
-- [ ] **Step 7.2 — Update `PersistedPollState` in `daemon/persisted_models.py`**
+- [ ] **Step 7.2 — Update `PersistedQuizState` in `daemon/persisted_models.py`**
 
 Replace `correct_ids` field and its validator:
 ```python
@@ -1259,21 +1259,21 @@ correct_indices: list[int] = Field(default_factory=list, description="Option ind
 ```
 Delete the `@field_validator("correct_ids", ...)` block entirely.
 
-**Replace `poll_correct_ids` legacy field** in `PersistedSessionState`:
+**Replace `quiz_correct_ids` legacy field** in `PersistedSessionState`:
 ```python
-poll_correct_indices: list[int] = Field(default_factory=list, exclude=True)
+quiz_correct_indices: list[int] = Field(default_factory=list, exclude=True)
 ```
-Delete the `@field_validator("poll_correct_ids", ...)` block entirely.
+Delete the `@field_validator("quiz_correct_ids", ...)` block entirely.
 
-**In `_normalize_legacy_participant_maps`** validator, update the legacy poll key migration:
-- Change `"correct_ids"` in `poll_keys` set to `"correct_indices"`
-- Change the `if "poll_correct_ids" in data:` block:
+**In `_normalize_legacy_participant_maps`** validator, update the legacy quiz key migration:
+- Change `"correct_ids"` in `quiz_keys` set to `"correct_indices"`
+- Change the `if "quiz_correct_ids" in data:` block:
 ```python
-if "poll_correct_indices" in data:
-    legacy = data["poll_correct_indices"]
-    poll.setdefault("correct_indices", [] if legacy is None else legacy)
+if "quiz_correct_indices" in data:
+    legacy = data["quiz_correct_indices"]
+    quiz.setdefault("correct_indices", [] if legacy is None else legacy)
 ```
-- Update `legacy_poll_keys` tuple: replace `"poll_correct_ids"` with `"poll_correct_indices"`
+- Update `legacy_quiz_keys` tuple: replace `"quiz_correct_ids"` with `"quiz_correct_indices"`
 
 - [ ] **Step 7.3 — Run full daemon test suite**
 
@@ -1286,7 +1286,7 @@ Expected: all PASS.
 
 ```bash
 git add daemon/__main__.py daemon/persisted_models.py
-git commit -m "refactor(poll): update daemon snapshot and persisted models to correct_indices"
+git commit -m "refactor(quiz): update daemon snapshot and persisted models to correct_indices"
 ```
 
 ---
@@ -1295,17 +1295,17 @@ git commit -m "refactor(poll): update daemon snapshot and persisted models to co
 
 **Files:**
 - Modify: `docs/participant-ws.yaml`
-- Modify: `docs/host-ws.yaml` (if it has poll schemas — check first)
+- Modify: `docs/host-ws.yaml` (if it has quiz schemas — check first)
 - Modify: `docs/openapi.yaml`
 - Regenerate: `API.md`
 
 - [ ] **Step 8.1 — Update `docs/participant-ws.yaml`**
 
-**`poll_closed` message** — replace `vote_counts` property and remove `total_votes`:
+**`quiz_closed` message** — replace `vote_counts` property and remove `total_votes`:
 ```yaml
-    poll_closed:
+    quiz_closed:
       summary: Voting closed by host
-      x-feature: poll
+      x-feature: quiz
       x-doc-notes:
         - Participants can see how others voted via vote_counts.
       payload:
@@ -1314,7 +1314,7 @@ git commit -m "refactor(poll): update daemon snapshot and persisted models to co
         properties:
           type:
             type: string
-            enum: [poll_closed]
+            enum: [quiz_closed]
           vote_counts:
             type: array
             items:
@@ -1322,18 +1322,18 @@ git commit -m "refactor(poll): update daemon snapshot and persisted models to co
             description: Vote count per option, indexed by option position
 ```
 
-**`poll_correct_revealed` message** — replace `correct_ids` with `correct_indices`:
+**`quiz_correct_revealed` message** — replace `correct_ids` with `correct_indices`:
 ```yaml
-    poll_correct_revealed:
+    quiz_correct_revealed:
       summary: Host revealed correct answers
-      x-feature: poll
+      x-feature: quiz
       payload:
         type: object
         required: [type, correct_indices]
         properties:
           type:
             type: string
-            enum: [poll_correct_revealed]
+            enum: [quiz_correct_revealed]
           correct_indices:
             type: array
             items:
@@ -1341,10 +1341,10 @@ git commit -m "refactor(poll): update daemon snapshot and persisted models to co
             description: 0-based indices of correct options
 ```
 
-- [ ] **Step 8.2 — Check and update `docs/host-ws.yaml` if it references `poll_closed` or `poll_correct_revealed`**
+- [ ] **Step 8.2 — Check and update `docs/host-ws.yaml` if it references `quiz_closed` or `quiz_correct_revealed`**
 
 ```bash
-grep -n "poll_closed\|poll_correct\|vote_counts\|correct_ids" docs/host-ws.yaml
+grep -n "quiz_closed\|quiz_correct\|vote_counts\|correct_ids" docs/host-ws.yaml
 ```
 Apply the same changes as participant-ws.yaml if any are found.
 
@@ -1379,11 +1379,11 @@ Apply the same changes as participant-ws.yaml if any are found.
       type: object
 ```
 
-**Delete `PollOption` schema** (around line 2494 — the one with `id` and `text`). Remove the full `PollOption:` block.
+**Delete `QuizOption` schema** (around line 2494 — the one with `id` and `text`). Remove the full `QuizOption:` block.
 
-**Delete `PollOptionRequest` schema** (around line 2507). Remove the full `PollOptionRequest:` block.
+**Delete `QuizOptionRequest` schema** (around line 2507). Remove the full `QuizOptionRequest:` block.
 
-**Update `CreatePollRequest` schema** — replace `options` field to be `list[str]`:
+**Update `CreateQuizRequest` schema** — replace `options` field to be `list[str]`:
 ```yaml
         options:
           default: []
@@ -1392,13 +1392,13 @@ Apply the same changes as participant-ws.yaml if any are found.
           title: Options
           type: array
 ```
-Remove any `$ref` to `PollOptionRequest` in CreatePollRequest.
+Remove any `$ref` to `QuizOptionRequest` in CreateQuizRequest.
 
-**Delete `PollQueueOption` schema** (around line 2598). Remove the full `PollQueueOption:` block.
+**Delete `QuizQueueOption` schema** (around line 2598). Remove the full `QuizQueueOption:` block.
 
-**Update `PollQueueQuestion` schema** — replace `options` and rename `correct_ids`:
+**Update `QuizQueueQuestion` schema** — replace `options` and rename `correct_ids`:
 ```yaml
-    PollQueueQuestion:
+    QuizQueueQuestion:
       properties:
         question:
           title: Question
@@ -1417,11 +1417,11 @@ Remove any `$ref` to `PollOptionRequest` in CreatePollRequest.
       - question
       - options
       - correct_indices
-      title: PollQueueQuestion
+      title: QuizQueueQuestion
       type: object
 ```
 
-**Update `PollResponse` schema** — replace `options` to `list[str]` (remove `$ref` to PollOption):
+**Update `QuizResponse` schema** — replace `options` to `list[str]` (remove `$ref` to QuizOption):
 ```yaml
         options:
           items:
@@ -1430,7 +1430,7 @@ Remove any `$ref` to `PollOptionRequest` in CreatePollRequest.
           type: array
 ```
 
-**Update `ClosePollResponse`** — replace `vote_counts` from object to array, remove `total_votes`:
+**Update `CloseQuizResponse`** — replace `vote_counts` from object to array, remove `total_votes`:
 ```yaml
         vote_counts:
           items:
@@ -1457,7 +1457,7 @@ Expected: no matches.
 
 ```bash
 git add docs/participant-ws.yaml docs/host-ws.yaml docs/openapi.yaml API.md
-git commit -m "docs(poll): update YAML contracts and API.md to index-based poll API"
+git commit -m "docs(quiz): update YAML contracts and API.md to index-based quiz API"
 ```
 
 ---
@@ -1467,18 +1467,18 @@ git commit -m "docs(poll): update YAML contracts and API.md to index-based poll 
 **Files:**
 - Modify: `static/participant.html`
 
-- [ ] **Step 9.1 — Update `_pollResult` comment**
+- [ ] **Step 9.1 — Update `_quizResult` comment**
 
 Find:
 ```javascript
-var _pollResult = null;   // {correct_ids: Set, voted_ids: Set} after reveal
+var _quizResult = null;   // {correct_ids: Set, voted_ids: Set} after reveal
 ```
 Replace with:
 ```javascript
-var _pollResult = null;   // {correct_indices: Set, voted_indices: Set} after reveal
+var _quizResult = null;   // {correct_indices: Set, voted_indices: Set} after reveal
 ```
 
-- [ ] **Step 9.2 — Update `_applyPollState()` function**
+- [ ] **Step 9.2 — Update `_applyQuizState()` function**
 
 **Replace** the `vote_counts` init line:
 ```javascript
@@ -1489,49 +1489,49 @@ var _pollResult = null;   // {correct_indices: Set, voted_indices: Set} after re
 ```javascript
   // Restore vote from server state (authoritative)
   if (msg.my_voted_indices != null) {
-    _myVote = (_currentPoll && _currentPoll.multi)
+    _myVote = (_currentQuiz && _currentQuiz.multi)
       ? new Set(msg.my_voted_indices)
       : (msg.my_voted_indices[0] != null ? msg.my_voted_indices[0] : null);
   }
 ```
 
-**Replace** the poll result restore block:
+**Replace** the quiz result restore block:
 ```javascript
-  // Restore poll result after reveal
-  if (msg.poll_correct_indices != null && msg.my_voted_indices != null) {
-    _pollResult = {
-      correct_indices: new Set(msg.poll_correct_indices),
+  // Restore quiz result after reveal
+  if (msg.quiz_correct_indices != null && msg.my_voted_indices != null) {
+    _quizResult = {
+      correct_indices: new Set(msg.quiz_correct_indices),
       voted_indices: new Set(msg.my_voted_indices)
     };
   }
 ```
 
-- [ ] **Step 9.3 — Update `_renderActivityPoll()` function**
+- [ ] **Step 9.3 — Update `_renderActivityQuiz()` function**
 
-**Replace** the `totalVotes` calculation (options are now `list[str]`, not `list[PollOption]`):
+**Replace** the `totalVotes` calculation (options are now `list[str]`, not `list[QuizOption]`):
 ```javascript
   var totalVotes = (_voteCounts || []).reduce(function(a, b) { return a + b; }, 0);
 ```
 
 **Replace** the `pcts` calculation:
 ```javascript
-  var pcts = _largestRemainder(_currentPoll.options.map(function(opt, idx) {
+  var pcts = _largestRemainder(_currentQuiz.options.map(function(opt, idx) {
     return totalVotes > 0 ? ((_voteCounts || [])[idx] || 0) / totalVotes * 100 : 0;
   }));
 ```
 
 **Replace** the `optionsHTML` map — options are now strings, idx is the identity:
 ```javascript
-  var optionsHTML = _currentPoll.options.map(function(text, idx) {
+  var optionsHTML = _currentQuiz.options.map(function(text, idx) {
     var pct = pcts[idx];
     var isSelected = multi ? (_myVote instanceof Set && _myVote.has(idx)) : (_myVote === idx);
     var selected = isSelected ? 'selected' : '';
-    var atLimit = multi && _currentPoll.correct_count && _myVote instanceof Set && _myVote.size >= _currentPoll.correct_count;
-    var disabled = (!_pollActive || (atLimit && !isSelected)) ? 'disabled' : '';
+    var atLimit = multi && _currentQuiz.correct_count && _myVote instanceof Set && _myVote.size >= _currentQuiz.correct_count;
+    var disabled = (!_quizActive || (atLimit && !isSelected)) ? 'disabled' : '';
     var resultIcon = '';
-    if (_pollResult) {
-      var wasVoted = _pollResult.voted_indices.has(idx);
-      var isCorrect = _pollResult.correct_indices.has(idx);
+    if (_quizResult) {
+      var wasVoted = _quizResult.voted_indices.has(idx);
+      var isCorrect = _quizResult.correct_indices.has(idx);
       if (isCorrect) resultIcon = '<span class="result-icon">&#x2705;</span>';
       else if (wasVoted) resultIcon = '<span class="result-icon">&#x274C;</span>';
     }
@@ -1550,18 +1550,18 @@ var _pollResult = null;   // {correct_indices: Set, voted_indices: Set} after re
 Replace the entire function:
 ```javascript
 function castVote(optionIdx) {
-  if (!_pollActive || !_currentPoll || !_sessionId) return;
+  if (!_quizActive || !_currentQuiz || !_sessionId) return;
 
-  if (_currentPoll.multi) {
+  if (_currentQuiz.multi) {
     if (!(_myVote instanceof Set)) _myVote = new Set();
     if (_myVote.has(optionIdx)) {
       _myVote.delete(optionIdx);
     } else {
-      var limit = _currentPoll.correct_count;
+      var limit = _currentQuiz.correct_count;
       if (limit && _myVote.size >= limit) return;
       _myVote.add(optionIdx);
     }
-    fetch('/' + _sessionId + '/api/participant/poll/vote', {
+    fetch('/' + _sessionId + '/api/participant/quiz/vote', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Participant-ID': _myUUID },
       body: JSON.stringify({ options: Array.from(_myVote) })
@@ -1569,24 +1569,24 @@ function castVote(optionIdx) {
   } else {
     if (_myVote === optionIdx) return;
     _myVote = optionIdx;
-    fetch('/' + _sessionId + '/api/participant/poll/vote', {
+    fetch('/' + _sessionId + '/api/participant/quiz/vote', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Participant-ID': _myUUID },
       body: JSON.stringify({ options: [optionIdx] })
     }).catch(function() {});
   }
-  _renderActivityPoll();
+  _renderActivityQuiz();
 }
 ```
 
-- [ ] **Step 9.5 — Update `poll_closed` WS handler**
+- [ ] **Step 9.5 — Update `quiz_closed` WS handler**
 
 Replace:
 ```javascript
-    case 'poll_closed':
-      _pollActive = false;
+    case 'quiz_closed':
+      _quizActive = false;
       if (msg.vote_counts !== undefined) _voteCounts = msg.vote_counts || [];
-      _renderActivityPoll();
+      _renderActivityQuiz();
       break;
 ```
 
@@ -1594,7 +1594,7 @@ Replace:
 
 ```bash
 git add static/participant.html
-git commit -m "feat(poll): update participant frontend to index-based voting"
+git commit -m "feat(quiz): update participant frontend to index-based voting"
 ```
 
 ---
@@ -1607,38 +1607,38 @@ git commit -m "feat(poll): update participant frontend to index-based voting"
 - [ ] **Step 10.1 — Fix `voteCounts` initializations from `{}` to `[]`**
 
 Change all occurrences of `voteCounts = {}` to `voteCounts = []`:
-- Line ~344: `voteCounts = {};` (inside `poll_opened` handler)
-- Line ~372: `voteCounts = {};` (inside `poll_cleared` handler)
+- Line ~344: `voteCounts = {};` (inside `quiz_opened` handler)
+- Line ~372: `voteCounts = {};` (inside `quiz_cleared` handler)
 
 Also change the `let` declaration:
 ```javascript
 let voteCounts = [];
 ```
 
-- [ ] **Step 10.2 — Update `poll_closed` WS handler**
+- [ ] **Step 10.2 — Update `quiz_closed` WS handler**
 
 Replace the handler block:
 ```javascript
-      if (msg.type === 'poll_closed') {
-        pollActive = false;
+      if (msg.type === 'quiz_closed') {
+        quizActive = false;
         _clearTimer();
         voteCounts = msg.vote_counts || [];
         totalVotes = voteCounts.reduce((a, b) => a + b, 0);
-        renderPollDisplay();
+        renderQuizDisplay();
         renderBars();
         return;
       }
 ```
 
-- [ ] **Step 10.3 — Update `poll_correct_revealed` WS handler**
+- [ ] **Step 10.3 — Update `quiz_correct_revealed` WS handler**
 
 Replace:
 ```javascript
-      if (msg.type === 'poll_correct_revealed') {
+      if (msg.type === 'quiz_correct_revealed') {
         correctOptIds = new Set(msg.correct_indices || []);
-        if (currentPoll) {
-          saveCorrectOpts(currentPoll.question);
-          recordPollInHistory(currentPoll, correctOptIds);
+        if (currentQuiz) {
+          saveCorrectOpts(currentQuiz.question);
+          recordQuizInHistory(currentQuiz, correctOptIds);
         }
         renderBars();
         return;
@@ -1665,7 +1665,7 @@ Replace (uses `vote_counts` field from `VoteUpdateMsg`):
 
 - [ ] **Step 10.6 — Update `toggleCorrect()` to use integer index**
 
-Replace the function call in `renderPollDisplay` — the `clickable` line:
+Replace the function call in `renderQuizDisplay` — the `clickable` line:
 ```javascript
       const clickable = canMark ? `onclick="toggleCorrect(${idx})" title="Click to mark as correct"` : '';
 ```
@@ -1679,11 +1679,11 @@ Update `toggleCorrect` call in `reveal_correct` fetch:
       body: JSON.stringify({ correct_indices: [...correctOptIds] }),
 ```
 
-- [ ] **Step 10.7 — Update `renderPollDisplay()` to use string options by index**
+- [ ] **Step 10.7 — Update `renderQuizDisplay()` to use string options by index**
 
-Replace the entire `bars` map inside `renderPollDisplay()`:
+Replace the entire `bars` map inside `renderQuizDisplay()`:
 ```javascript
-    const bars = currentPoll.options.map((text, idx) => {
+    const bars = currentQuiz.options.map((text, idx) => {
       const count = (voteCounts || [])[idx] || 0;
       const pct = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
       const maxCount = Math.max(0, ...(voteCounts || []));
@@ -1707,28 +1707,28 @@ Replace the entire `bars` map inside `renderPollDisplay()`:
 
 Also update the options display during active voting:
 ```javascript
-      ? `<div class="options-plain">${currentPoll.options.map((text, idx) =>
+      ? `<div class="options-plain">${currentQuiz.options.map((text, idx) =>
           `<div class="option-text-only">${escHtml(text)}</div>`).join('')}</div>
 ```
 
 - [ ] **Step 10.8 — Update `renderBars()` to use index**
 
-Replace the `currentPoll.options.forEach` block in `renderBars()`:
+Replace the `currentQuiz.options.forEach` block in `renderBars()`:
 ```javascript
     const maxCount = Math.max(0, ...(voteCounts || []));
-    currentPoll.options.forEach((text, idx) => {
+    currentQuiz.options.forEach((text, idx) => {
       const row = document.querySelector(`.result-row[data-id="${idx}"]`);
       if (!row) return;
       const count = (voteCounts || [])[idx] || 0;
       const pct = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
       const fill = row.querySelector('.bar-fill');
       const pctEl = row.querySelector('.pct');
-      const canMarkNow = !pollActive && totalVotes > 0;
+      const canMarkNow = !quizActive && totalVotes > 0;
       const isCorrect = canMarkNow && correctOptIds.has(idx);
       row.className = `result-row${isCorrect ? ' correct' : ''}${canMarkNow ? ' markable' : ''}`;
       const labelSpan = row.querySelector('.result-label span:first-child');
       if (labelSpan) {
-        const hints = canMarkNow ? getLlmHints(currentPoll.question) : null;
+        const hints = canMarkNow ? getLlmHints(currentQuiz.question) : null;
         const llmHint = hints && hints.includes(idx) && !isCorrect;
         labelSpan.innerHTML = escHtml(text) + (isCorrect ? ' ✅' : '') +
           (llmHint ? ' <span class="llm-hint" title="AI suggestion">✅ 🤔</span>' : '');
@@ -1746,7 +1746,7 @@ Expected: all PASS.
 
 ```bash
 git add static/host.js
-git commit -m "feat(poll): update host frontend to index-based voting"
+git commit -m "feat(quiz): update host frontend to index-based voting"
 git push --no-verify origin master
 ```
 
@@ -1755,14 +1755,14 @@ git push --no-verify origin master
 ## Self-review
 
 **Spec coverage check:**
-- ✅ `poll_opened` options → `list[str]`: Tasks 1, 4, 5 (PollData in participant + host routers)
+- ✅ `quiz_opened` options → `list[str]`: Tasks 1, 4, 5 (QuizData in participant + host routers)
 - ✅ `POST /vote` `options: list[int]`: Tasks 2, 9
-- ✅ `poll_closed` `vote_counts: list[int]`, no `total_votes`: Tasks 2, 3, 10
-- ✅ `poll_correct_revealed` `correct_indices: list[int]`: Tasks 2, 3, 9, 10
+- ✅ `quiz_closed` `vote_counts: list[int]`, no `total_votes`: Tasks 2, 3, 10
+- ✅ `quiz_correct_revealed` `correct_indices: list[int]`: Tasks 2, 3, 9, 10
 - ✅ `RevealCorrectRequest.correct_indices`: Task 2
-- ✅ Participant state `my_voted_indices`, `poll_correct_indices`, `vote_counts: list[int]`: Task 5
-- ✅ `CreatePollRequest.options: list[str]`: Task 2
-- ✅ `PollQueueQuestion` refactor: Tasks 4, 6
+- ✅ Participant state `my_voted_indices`, `quiz_correct_indices`, `vote_counts: list[int]`: Task 5
+- ✅ `CreateQuizRequest.options: list[str]`: Task 2
+- ✅ `QuizQueueQuestion` refactor: Tasks 4, 6
 - ✅ `daemon/persisted_models.py` `correct_indices`: Task 7
 - ✅ `daemon/__main__.py` snapshot: Task 7
 - ✅ YAML contracts + API.md: Task 8

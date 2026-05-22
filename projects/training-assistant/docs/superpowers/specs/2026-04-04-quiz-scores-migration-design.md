@@ -1,24 +1,24 @@
-# Phase 4c: Poll + Scores + Leaderboard Migration — Design Spec
+# Phase 4c: Quiz + Scores + Leaderboard Migration — Design Spec
 
 ## Goal
 
-Migrate poll (voting, scoring, timer, correct reveal), scores (global authority), and leaderboard to the daemon. Daemon becomes the single score authority; Railway keeps a **read-only score mirror** (updated by daemon broadcasts) so unmigrated features (codereview state builder, session snapshot, core state builder) continue working. Refactor quiz integration to call poll state directly. Clean up Q&A/wordcloud `score_award` and `wordcloud_state_sync` write-backs.
+Migrate quiz (voting, scoring, timer, correct reveal), scores (global authority), and leaderboard to the daemon. Daemon becomes the single score authority; Railway keeps a **read-only score mirror** (updated by daemon broadcasts) so unmigrated features (codereview state builder, session snapshot, core state builder) continue working. Refactor quiz integration to call quiz state directly. Clean up Q&A/wordcloud `score_award` and `wordcloud_state_sync` write-backs.
 
 ## Architecture
 
 ```
 Participant Browser          Railway (BE)                    Daemon (Mac)
 ┌──────────────┐        ┌──────────────────┐          ┌──────────────────┐
-│ POST /vote   │──REST──│ proxy_bridge     │──WS────> │ poll/router.py   │
-│              │        │ (dumb pipe)      │          │ poll/state.py    │
+│ POST /vote   │──REST──│ proxy_bridge     │──WS────> │ quiz/router.py   │
+│              │        │ (dumb pipe)      │          │ quiz/state.py    │
 │              │<──WS───│ broadcast fan-out│<──WS──── │ scores.py        │
-│              │        │                  │          │ quiz/poll_api.py │
+│              │        │                  │          │ quiz/quiz_api.py │
 └──────────────┘        └──────────────────┘          └──────────────────┘
 
 Host Browser ──── REST ──────────────────────────────> Daemon localhost:1234
 ```
 
-Daemon owns all poll state, all scoring, and leaderboard. Railway keeps a read-only score mirror (updated by daemon broadcasts) for unmigrated features that still read `state.scores`.
+Daemon owns all quiz state, all scoring, and leaderboard. Railway keeps a read-only score mirror (updated by daemon broadcasts) for unmigrated features that still read `state.scores`.
 
 ## Design Decisions
 
@@ -28,7 +28,7 @@ Each migration phase produces the final architecture. No dead code, no state syn
 
 ### Daemon owns scores globally
 
-Scores move from Railway `AppState` to daemon as the single authority. A new `daemon/scores.py` module holds the global `scores: dict[str, int]` and `base_scores: dict[str, int]`. All features that award points (poll, Q&A, wordcloud) use this module. The `score_award` WS message type is removed.
+Scores move from Railway `AppState` to daemon as the single authority. A new `daemon/scores.py` module holds the global `scores: dict[str, int]` and `base_scores: dict[str, int]`. All features that award points (quiz, Q&A, wordcloud) use this module. The `score_award` WS message type is removed.
 
 **Read-only score mirror on Railway:** Many unmigrated Railway features still read `state.scores`: core state builder (participant `my_score`, host participant list), core messaging (`historical_participant_ids`), codereview state builder, session restore, snapshot. Rather than modifying all of them, Railway keeps `state.scores` as a **read-only mirror** updated by a new `_handle_scores_updated` broadcast handler. Railway never writes to `state.scores` — only the daemon does (via broadcast events). The mirror is removed when the remaining features are migrated.
 
@@ -42,23 +42,23 @@ Vote timestamps are recorded when daemon processes the vote. The extra ~50ms WS 
 
 ### No live vote counts during voting
 
-`vote_update` broadcast is removed. Participants see results only after the host closes the poll. This prevents the bandwagon effect and matches the redesign spec.
+`vote_update` broadcast is removed. Participants see results only after the host closes the quiz. This prevents the bandwagon effect and matches the redesign spec.
 
 ### Unpersonalized broadcasts everywhere
 
-`poll_correct_revealed` sends `{correct_ids, scores, votes}` — each client picks its own data by UUID. `leaderboard_revealed` sends `{entries, total_participants}` — each client computes own rank by UUID. No per-participant messages. Follows the "ZERO personalization on BE" principle.
+`quiz_correct_revealed` sends `{correct_ids, scores, votes}` — each client picks its own data by UUID. `leaderboard_revealed` sends `{entries, total_participants}` — each client computes own rank by UUID. No per-participant messages. Follows the "ZERO personalization on BE" principle.
 
-### Quiz calls poll state directly
+### Quiz calls quiz state directly
 
-`daemon/quiz/poll_api.py` stops sending `poll_create`/`poll_open` WS messages. Instead calls `poll_state.create_poll()` and `poll_state.open_poll()` directly, then triggers broadcasts via `_ws_client`.
+`daemon/quiz/quiz_api.py` stops sending `quiz_create`/`quiz_open` WS messages. Instead calls `quiz_state.create_quiz()` and `quiz_state.open_quiz()` directly, then triggers broadcasts via `_ws_client`.
 
 ### Votes are final (single-select)
 
-For single-select polls, once a participant votes, the vote is locked — `cast_vote()` rejects if `pid` is already in `self.votes`. For multi-select, toggling is allowed (the participant can update their selection set until the poll closes). This matches the existing client behavior and the "Votes are final" design decision.
+For single-select quizzes, once a participant votes, the vote is locked — `cast_vote()` rejects if `pid` is already in `self.votes`. For multi-select, toggling is allowed (the participant can update their selection set until the quiz closes). This matches the existing client behavior and the "Votes are final" design decision.
 
-### Poll state is daemon-only (no Railway restore)
+### Quiz state is daemon-only (no Railway restore)
 
-Poll state is not included in `daemon_state_push` from Railway. The daemon owns poll state; it persists across daemon WS reconnects because the daemon process stays alive. If the daemon process restarts, poll state is lost (acceptable for live events). `vote_times`, `poll_opened_at`, and timer state are transient and never persisted.
+Quiz state is not included in `daemon_state_push` from Railway. The daemon owns quiz state; it persists across daemon WS reconnects because the daemon process stays alive. If the daemon process restarts, quiz state is lost (acceptable for live events). `vote_times`, `quiz_opened_at`, and timer state are transient and never persisted.
 
 ### Thread safety on scoring
 
@@ -75,14 +75,14 @@ class Scores:
     def __init__(self):
         self._lock = threading.Lock()
         self.scores: dict[str, int] = {}      # uuid → total score
-        self.base_scores: dict[str, int] = {}  # uuid → score at poll open
+        self.base_scores: dict[str, int] = {}  # uuid → score at quiz open
 
     def add_score(self, pid: str, points: int):
         with self._lock:
             self.scores[pid] = self.scores.get(pid, 0) + points
 
     def snapshot_base(self):
-        """Capture current scores as base (called when poll opens)."""
+        """Capture current scores as base (called when quiz opens)."""
         with self._lock:
             self.base_scores = dict(self.scores)
 
@@ -106,7 +106,7 @@ class Scores:
 scores = Scores()
 ```
 
-### `daemon/poll/state.py` — Poll state singleton
+### `daemon/quiz/state.py` — Quiz state singleton
 
 ```python
 import threading
@@ -116,59 +116,59 @@ _MAX_POINTS = 1000
 _MIN_POINTS = 500
 _SLOWEST_MULTIPLIER = 3
 
-class PollState:
+class QuizState:
     def __init__(self):
         self._lock = threading.Lock()
-        self.poll: dict | None = None
-        self.poll_active: bool = False
+        self.quiz: dict | None = None
+        self.quiz_active: bool = False
         self.votes: dict[str, str | list] = {}        # uuid → option_id or [option_ids]
         self.vote_times: dict[str, datetime] = {}      # uuid → first vote timestamp
-        self.poll_opened_at: datetime | None = None
-        self.poll_correct_ids: list[str] | None = None
-        self.poll_timer_seconds: int | None = None
-        self.poll_timer_started_at: datetime | None = None
+        self.quiz_opened_at: datetime | None = None
+        self.quiz_correct_ids: list[str] | None = None
+        self.quiz_timer_seconds: int | None = None
+        self.quiz_timer_started_at: datetime | None = None
         self._vote_counts_dirty: bool = True
         self._vote_counts_cache: dict | None = None
-        self.quiz_md_content: str = ""                 # accumulated closed polls as markdown
+        self.quiz_md_content: str = ""                 # accumulated closed quizzes as markdown
 
-    def create_poll(self, question: str, options: list[dict], multi: bool = False,
+    def create_quiz(self, question: str, options: list[dict], multi: bool = False,
                     correct_count: int | None = None, source: str | None = None,
                     page: str | None = None) -> dict:
-        """Create a new poll. Returns the poll object."""
+        """Create a new quiz. Returns the quiz object."""
         import uuid as _uuid
-        self.poll = {
+        self.quiz = {
             "id": _uuid.uuid4().hex[:8],
             "question": question,
             "options": options,
             "multi": multi,
         }
         if correct_count is not None:
-            self.poll["correct_count"] = correct_count
+            self.quiz["correct_count"] = correct_count
         if source:
-            self.poll["source"] = source
+            self.quiz["source"] = source
         if page:
-            self.poll["page"] = page
-        self.poll_active = False
+            self.quiz["page"] = page
+        self.quiz_active = False
         self.votes.clear()
         self.vote_times.clear()
-        self.poll_correct_ids = None
-        self.poll_timer_seconds = None
-        self.poll_timer_started_at = None
+        self.quiz_correct_ids = None
+        self.quiz_timer_seconds = None
+        self.quiz_timer_started_at = None
         self._vote_counts_dirty = True
-        return dict(self.poll)
+        return dict(self.quiz)
 
-    def open_poll(self, scores_snapshot_fn) -> None:
+    def open_quiz(self, scores_snapshot_fn) -> None:
         """Open voting. scores_snapshot_fn captures current scores as base."""
-        self.poll_active = True
-        self.poll_opened_at = datetime.now(timezone.utc)
+        self.quiz_active = True
+        self.quiz_opened_at = datetime.now(timezone.utc)
         self.votes.clear()
         self.vote_times.clear()
         self._vote_counts_dirty = True
         scores_snapshot_fn()
 
-    def close_poll(self) -> dict:
+    def close_quiz(self) -> dict:
         """Close voting. Returns {vote_counts, total_votes}."""
-        self.poll_active = False
+        self.quiz_active = False
         counts = self.vote_counts()
         total = len(self.votes)
         return {"vote_counts": counts, "total_votes": total}
@@ -177,16 +177,16 @@ class PollState:
         """Record a vote. Returns True if accepted, False if rejected.
         Single-select: votes are final (reject if already voted).
         Multi-select: toggling allowed (overwrite selection set)."""
-        if not self.poll or not self.poll_active:
+        if not self.quiz or not self.quiz_active:
             return False
 
-        valid_ids = [o["id"] for o in self.poll["options"]]
-        is_multi = self.poll.get("multi", False)
+        valid_ids = [o["id"] for o in self.quiz["options"]]
+        is_multi = self.quiz.get("multi", False)
 
         if is_multi:
             if option_ids is None:
                 return False
-            correct_count = self.poll.get("correct_count")
+            correct_count = self.quiz.get("correct_count")
             max_allowed = correct_count if correct_count else len(valid_ids)
             if (not isinstance(option_ids, list)
                 or len(option_ids) > max_allowed
@@ -214,10 +214,10 @@ class PollState:
         Returns {correct_ids, scores, votes}. Safe to call with no votes."""
         correct_set = set(correct_ids)
         now = datetime.now(timezone.utc)
-        opened_at = self.poll_opened_at or now
-        all_option_ids = {opt["id"] for opt in self.poll.get("options", [])}
+        opened_at = self.quiz_opened_at or now
+        all_option_ids = {opt["id"] for opt in self.quiz.get("options", [])}
         wrong_set = all_option_ids - correct_set
-        multi = self.poll.get("multi", False)
+        multi = self.quiz.get("multi", False)
 
         # Find correct voters for min-time calculation
         correct_voters = set()
@@ -264,7 +264,7 @@ class PollState:
             if pts > 0:
                 scores_obj.add_score(pid, pts)
 
-        self.poll_correct_ids = list(correct_set)
+        self.quiz_correct_ids = list(correct_set)
         self._append_to_quiz_md(correct_set)
 
         return {
@@ -275,23 +275,23 @@ class PollState:
 
     def start_timer(self, seconds: int) -> dict:
         """Start countdown timer. Returns {seconds, started_at}."""
-        self.poll_timer_seconds = seconds
-        self.poll_timer_started_at = datetime.now(timezone.utc)
+        self.quiz_timer_seconds = seconds
+        self.quiz_timer_started_at = datetime.now(timezone.utc)
         return {
             "seconds": seconds,
-            "started_at": self.poll_timer_started_at.isoformat(),
+            "started_at": self.quiz_timer_started_at.isoformat(),
         }
 
     def clear(self) -> None:
-        """Remove poll and reset all poll state."""
-        self.poll = None
-        self.poll_active = False
+        """Remove quiz and reset all quiz state."""
+        self.quiz = None
+        self.quiz_active = False
         self.votes.clear()
         self.vote_times.clear()
-        self.poll_opened_at = None
-        self.poll_correct_ids = None
-        self.poll_timer_seconds = None
-        self.poll_timer_started_at = None
+        self.quiz_opened_at = None
+        self.quiz_correct_ids = None
+        self.quiz_timer_seconds = None
+        self.quiz_timer_started_at = None
         self._vote_counts_dirty = True
 
     def vote_counts(self) -> dict:
@@ -308,41 +308,41 @@ class PollState:
         return counts
 
     def _append_to_quiz_md(self, correct_set: set[str]):
-        """Append closed poll to quiz markdown for quiz history."""
-        if not self.poll:
+        """Append closed quiz to quiz markdown for quiz history."""
+        if not self.quiz:
             return
-        lines = [f"### {self.poll['question']}\n"]
-        for opt in self.poll["options"]:
+        lines = [f"### {self.quiz['question']}\n"]
+        for opt in self.quiz["options"]:
             marker = "✓" if opt["id"] in correct_set else "✗"
             lines.append(f"- [{marker}] {opt['text']}")
         lines.append("")
         self.quiz_md_content += "\n".join(lines) + "\n"
 
-poll_state = PollState()
+quiz_state = QuizState()
 ```
 
-**Note:** `PollState` has no `sync_from_restore()`. Poll state lives only on daemon — it is not pushed from Railway. If the daemon process restarts, poll state is lost (acceptable for live events). `quiz_md_content` is also transient — it accumulates during a session and resets on daemon restart.
+**Note:** `QuizState` has no `sync_from_restore()`. Quiz state lives only on daemon — it is not pushed from Railway. If the daemon process restarts, quiz state is lost (acceptable for live events). `quiz_md_content` is also transient — it accumulates during a session and resets on daemon restart.
 
-### `daemon/poll/router.py` — Participant + host endpoints
+### `daemon/quiz/router.py` — Participant + host endpoints
 
-**Participant router** (`/api/participant/poll/*`):
+**Participant router** (`/api/participant/quiz/*`):
 
 | Endpoint | Method | Body | Behavior |
 |----------|--------|------|----------|
 | `/vote` | POST | `{option_id}` or `{option_ids}` | Validate, record vote. No broadcast (no live counts). Return `{ok: true}` or 409 if already voted (single-select) |
 
-No write-back events on vote — daemon owns poll state, no broadcast during open voting.
+No write-back events on vote — daemon owns quiz state, no broadcast during open voting.
 
-**Host router** (`/api/{session_id}/poll/*`):
+**Host router** (`/api/{session_id}/quiz/*`):
 
 | Endpoint | Method | Body | Behavior |
 |----------|--------|------|----------|
-| `/` | POST | `{question, options, multi?, correct_count?}` | Create poll. Broadcast `poll_opened` if auto-open, else just store |
-| `/open` | POST | `{}` | Open voting, snapshot base scores. Broadcast `poll_opened` |
-| `/close` | POST | `{}` | Close voting. Broadcast `poll_closed` with vote counts |
-| `/correct` | PUT | `{correct_ids}` | Compute scores. Broadcast `poll_correct_revealed` + `scores_updated` |
-| `/timer` | POST | `{seconds}` | Start countdown. Broadcast `poll_timer_started` |
-| `/` | DELETE | — | Clear poll. Broadcast `poll_cleared` |
+| `/` | POST | `{question, options, multi?, correct_count?}` | Create quiz. Broadcast `quiz_opened` if auto-open, else just store |
+| `/open` | POST | `{}` | Open voting, snapshot base scores. Broadcast `quiz_opened` |
+| `/close` | POST | `{}` | Close voting. Broadcast `quiz_closed` with vote counts |
+| `/correct` | PUT | `{correct_ids}` | Compute scores. Broadcast `quiz_correct_revealed` + `scores_updated` |
+| `/timer` | POST | `{seconds}` | Start countdown. Broadcast `quiz_timer_started` |
+| `/` | DELETE | — | Clear quiz. Broadcast `quiz_cleared` |
 
 Host endpoints: `_ws_client.send()` for Railway broadcast + `send_to_host()` for host browser.
 
@@ -350,7 +350,7 @@ Host endpoints: `_ws_client.send()` for Railway broadcast + `send_to_host()` for
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/{session_id}/quiz-md` | GET | Return accumulated closed polls as markdown |
+| `/api/{session_id}/quiz-md` | GET | Return accumulated closed quizzes as markdown |
 
 ### Codereview scoring (interim)
 
@@ -376,11 +376,11 @@ New daemon WS message handler:
 
 | Event type | Trigger | Payload |
 |------------|---------|---------|
-| `poll_opened` | Host opens voting | `{poll}` — poll object with question, options, multi |
-| `poll_closed` | Host closes voting | `{vote_counts, total_votes}` |
-| `poll_correct_revealed` | Host reveals answers | `{correct_ids, scores, votes}` |
-| `poll_cleared` | Host deletes poll | `{}` |
-| `poll_timer_started` | Host starts countdown | `{seconds, started_at}` |
+| `quiz_opened` | Host opens voting | `{quiz}` — quiz object with question, options, multi |
+| `quiz_closed` | Host closes voting | `{vote_counts, total_votes}` |
+| `quiz_correct_revealed` | Host reveals answers | `{correct_ids, scores, votes}` |
+| `quiz_cleared` | Host deletes quiz | `{}` |
+| `quiz_timer_started` | Host starts countdown | `{seconds, started_at}` |
 | `scores_updated` | Any score change | `{scores}` — full scores map |
 | `leaderboard_revealed` | Host triggers reveal | `{entries, total_participants}` |
 | `leaderboard_hide` | Host hides leaderboard | `{}` |
@@ -390,18 +390,18 @@ All events broadcast to participants via `_ws_client.send({"type": "broadcast", 
 ## Removed from Railway
 
 ### Files deleted
-- `features/poll/router.py`, `features/poll/state_builder.py`, `features/poll/__init__.py`
+- `features/quiz/router.py`, `features/quiz/state_builder.py`, `features/quiz/__init__.py`
 - `features/leaderboard/router.py`, `features/leaderboard/state_builder.py`, `features/leaderboard/__init__.py`
 - `features/scores/router.py`, `features/scores/__init__.py` (orphan module, not mounted but references `state.scores`)
 
 ### Code removed
-- `features/ws/router.py`: WS handlers for `vote`, `multi_vote`; `_record_vote_and_broadcast()` helper; `_handle_poll_create`, `_handle_poll_open` handlers + `MSG_POLL_CREATE`, `MSG_POLL_OPEN` from handler map
+- `features/ws/router.py`: WS handlers for `vote`, `multi_vote`; `_record_vote_and_broadcast()` helper; `_handle_quiz_create`, `_handle_quiz_open` handlers + `MSG_QUIZ_CREATE`, `MSG_QUIZ_OPEN` from handler map
 - `features/ws/router.py`: `_handle_score_award` handler + `MSG_SCORE_AWARD` from handler map; `_handle_wordcloud_state_sync` handler + `MSG_WORDCLOUD_STATE_SYNC` from handler map
 - `features/ws/router.py`: score write in `_handle_state_restore` (`state.scores = restore_data["scores"]`) — daemon handles score persistence
-- `core/state.py`: poll fields (`poll`, `poll_active`, `votes`, `vote_times`, `poll_opened_at`, `poll_timer_*`, `poll_correct_ids`, `_vote_counts_cache`, `quiz_md_content`); `add_score()` method; leaderboard field (`leaderboard_active`)
+- `core/state.py`: quiz fields (`quiz`, `quiz_active`, `votes`, `vote_times`, `quiz_opened_at`, `quiz_timer_*`, `quiz_correct_ids`, `_vote_counts_cache`, `quiz_md_content`); `add_score()` method; leaderboard field (`leaderboard_active`)
 - `core/messaging.py`: `broadcast_leaderboard()` function and its lazy import of `_build_leaderboard_data`
-- `main.py`: poll router mount, leaderboard router mount removed
-- `daemon_state_push` in `features/ws/router.py`: remove poll fields AND `scores`/`base_scores` — daemon owns scores; pushing Railway's stale mirror back would corrupt authoritative data on WS reconnect
+- `main.py`: quiz router mount, leaderboard router mount removed
+- `daemon_state_push` in `features/ws/router.py`: remove quiz fields AND `scores`/`base_scores` — daemon owns scores; pushing Railway's stale mirror back would corrupt authoritative data on WS reconnect
 
 ### What STAYS on Railway (read-only score mirror)
 - `core/state.py`: `scores: dict[str, int]` and `base_scores: dict[str, int]` remain but are **never written by Railway code**. Updated only by the new `_handle_scores_updated` handler.
@@ -412,7 +412,7 @@ All events broadcast to participants via `_ws_client.send({"type": "broadcast", 
 - `features/snapshot/router.py`: score serialization in snapshot — stays (reads mirror for backup), score restore removed (daemon restores its own scores).
 
 ### WS message types removed
-- `MSG_POLL_CREATE`, `MSG_POLL_OPEN` (replaced by direct state calls)
+- `MSG_QUIZ_CREATE`, `MSG_QUIZ_OPEN` (replaced by direct state calls)
 - `MSG_SCORE_AWARD` (replaced by daemon `scores_updated` broadcast)
 - `MSG_WORDCLOUD_STATE_SYNC` (no longer needed)
 
@@ -437,21 +437,21 @@ All events broadcast to participants via `_ws_client.send({"type": "broadcast", 
 - Add `scores_updated` broadcast to write-back events
 - Also `send_to_host()` for host browser scores update
 
-### `daemon/quiz/poll_api.py`
-- `post_poll()`: call `poll_state.create_poll()` directly, then broadcast `poll_opened` via `_ws_client`
-- `open_poll()`: call `poll_state.open_poll()` directly, then broadcast via `_ws_client`
-- `fetch_quiz_history()`: read `poll_state.quiz_md_content` directly instead of HTTP fetch
-- Remove WS message sends for `poll_create`/`poll_open`
+### `daemon/quiz/quiz_api.py`
+- `post_quiz()`: call `quiz_state.create_quiz()` directly, then broadcast `quiz_opened` via `_ws_client`
+- `open_quiz()`: call `quiz_state.open_quiz()` directly, then broadcast via `_ws_client`
+- `fetch_quiz_history()`: read `quiz_state.quiz_md_content` directly instead of HTTP fetch
+- Remove WS message sends for `quiz_create`/`quiz_open`
 
 ### `daemon/__main__.py`
 - Import `scores` from `daemon.scores`
-- Import `poll_state` from `daemon.poll.state` (for quiz integration, not for state push)
+- Import `quiz_state` from `daemon.quiz.state` (for quiz integration, not for state push)
 - Add to `_handle_daemon_state_push`: `scores.sync_from_restore(data)` (scores are pushed from Railway on reconnect)
-- Wire `set_ws_client` for poll router and leaderboard router
+- Wire `set_ws_client` for quiz router and leaderboard router
 - Register `codereview_score_award` handler
 
 ### `daemon/host_server.py`
-- Mount poll participant + host routers
+- Mount quiz participant + host routers
 - Mount leaderboard host router
 - Mount quiz-md endpoint
 
@@ -473,20 +473,20 @@ All events broadcast to participants via `_ws_client.send({"type": "broadcast", 
 - Score restore from snapshot: remove (daemon handles its own score persistence)
 
 ### `features/ws/router.py` (Railway)
-- Remove `_handle_score_award`, `_handle_wordcloud_state_sync`, `_handle_poll_create`, `_handle_poll_open` handlers and their entries from `_DAEMON_MSG_HANDLERS`
-- Remove poll fields from `daemon_state_push` payload; keep `scores` and `base_scores` (daemon syncs from them on reconnect)
+- Remove `_handle_score_award`, `_handle_wordcloud_state_sync`, `_handle_quiz_create`, `_handle_quiz_open` handlers and their entries from `_DAEMON_MSG_HANDLERS`
+- Remove quiz fields from `daemon_state_push` payload; keep `scores` and `base_scores` (daemon syncs from them on reconnect)
 - Add `_handle_scores_updated` handler: updates `state.scores` mirror from broadcast payload
 - Add `codereview_score_award` handler: forwards to daemon (no Railway processing)
 - Keep `_handle_broadcast` (generic fan-out)
 
 ### `static/participant.js`
-- `castVote()`: switch from `sendWS('vote', ...)` / `sendWS('multi_vote', ...)` to `participantApi('poll/vote', {option_id})` or `participantApi('poll/vote', {option_ids})`
+- `castVote()`: switch from `sendWS('vote', ...)` / `sendWS('multi_vote', ...)` to `participantApi('quiz/vote', {option_id})` or `participantApi('quiz/vote', {option_ids})`
 - Add WS message handlers:
-  - `poll_opened`: show poll, reset vote state
-  - `poll_closed`: show results (vote_counts, total_votes)
-  - `poll_correct_revealed`: extract own vote from `msg.votes[myUUID]`, own score from `msg.scores[myUUID]`, show correct/incorrect
-  - `poll_cleared`: hide poll
-  - `poll_timer_started`: start countdown
+  - `quiz_opened`: show quiz, reset vote state
+  - `quiz_closed`: show results (vote_counts, total_votes)
+  - `quiz_correct_revealed`: extract own vote from `msg.votes[myUUID]`, own score from `msg.scores[myUUID]`, show correct/incorrect
+  - `quiz_cleared`: hide quiz
+  - `quiz_timer_started`: start countdown
   - `scores_updated`: update `myScore` from `msg.scores[myUUID]`
   - `leaderboard_revealed`: compute own rank from `msg.entries` using own UUID
   - `leaderboard_hide`: hide leaderboard overlay
@@ -495,25 +495,25 @@ All events broadcast to participants via `_ws_client.send({"type": "broadcast", 
 - Remove old `leaderboard` message handler (replaced by `leaderboard_revealed`)
 
 ### `static/host.js`
-- Poll CRUD calls: change from Railway URLs to `daemonApi()` (localhost:1234)
+- Quiz CRUD calls: change from Railway URLs to `daemonApi()` (localhost:1234)
 - Leaderboard calls: change from Railway URLs to `daemonApi()`
 - Score reset: change from Railway URL to `daemonApi()`
-- Add handlers for poll and leaderboard broadcast events pushed via host WS
+- Add handlers for quiz and leaderboard broadcast events pushed via host WS
 - Handle `scores_updated` for score display
 
 ## Known Limitations
 
 - **Timer not restored on reconnect**: If daemon WS drops briefly while a countdown timer is active, participants won't see the restored timer. Daemon reconnects are rare and brief; timers are typically 10-30 seconds.
-- **Poll state lost on daemon restart**: Poll state (current poll, votes, timer) is in-memory only. If the daemon process restarts mid-poll, the poll is lost. Acceptable for live events where the host can recreate.
+- **Quiz state lost on daemon restart**: Quiz state (current quiz, votes, timer) is in-memory only. If the daemon process restarts mid-quiz, the quiz is lost. Acceptable for live events where the host can recreate.
 - **`quiz_md_content` lost on daemon restart**: Accumulated quiz history resets. The quiz generator can function without history (it just might regenerate similar questions).
 
 ## Testing
 
-- Unit tests for `PollState` scoring logic (speed-based, multi-select proportional, votes-are-final enforcement)
+- Unit tests for `QuizState` scoring logic (speed-based, multi-select proportional, votes-are-final enforcement)
 - Unit tests for `Scores` module (add with thread safety, reset, snapshot, sync_from_restore)
 - Integration test: participant vote via REST proxy round-trip
 - Integration test: host create → open → vote → close → reveal flow
-- Integration test: quiz generates poll via direct state call
+- Integration test: quiz generates quiz via direct state call
 - Integration test: codereview confirm-line awards points via daemon
 - Integration test: leaderboard show/hide/reset
 - Verify Q&A/wordcloud still award points correctly after score_award removal

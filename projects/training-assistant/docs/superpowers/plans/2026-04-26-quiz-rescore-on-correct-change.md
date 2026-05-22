@@ -1,14 +1,14 @@
-# Poll Re-scoring on Host Correct-Answer Change Implementation Plan
+# Quiz Re-scoring on Host Correct-Answer Change Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make `daemon/poll/state.py::PollState.reveal_correct` idempotent w.r.t. scoring, so that when the host changes which option is "correct", points are reversed from participants whose vote no longer matches and re-awarded to participants whose vote now matches.
+**Goal:** Make `daemon/quiz/state.py::QuizState.reveal_correct` idempotent w.r.t. scoring, so that when the host changes which option is "correct", points are reversed from participants whose vote no longer matches and re-awarded to participants whose vote now matches.
 
-**Architecture:** Track per-poll `awarded_points: dict[pid, int]` on `PollState`. On every `reveal_correct` call: (1) subtract previous awards from `scores`, (2) clear the dict, (3) run the existing scoring loop and record new awards into the dict. The `already_revealed` guard is removed. The field is added to the persisted snapshot (`PersistedPollState`) and to the snapshot writer in `daemon/__main__.py` for consistency with the existing poll fields.
+**Architecture:** Track per-quiz `awarded_points: dict[pid, int]` on `QuizState`. On every `reveal_correct` call: (1) subtract previous awards from `scores`, (2) clear the dict, (3) run the existing scoring loop and record new awards into the dict. The `already_revealed` guard is removed. The field is added to the persisted snapshot (`PersistedQuizState`) and to the snapshot writer in `daemon/__main__.py` for consistency with the existing quiz fields.
 
 **Tech Stack:** Python 3 · FastAPI · Pydantic · pytest · pytest-bdd · Playwright (Docker hermetic).
 
-**Spec:** `docs/superpowers/specs/2026-04-26-poll-rescore-on-correct-change-design.md`
+**Spec:** `docs/superpowers/specs/2026-04-26-quiz-rescore-on-correct-change-design.md`
 
 ---
 
@@ -16,42 +16,42 @@
 
 | File | Responsibility | Change |
 |---|---|---|
-| `daemon/poll/state.py` | Poll lifecycle + scoring algorithm | Add `awarded_points`; reverse-then-apply in `reveal_correct`; drop `already_revealed`. |
-| `daemon/persisted_models.py` | Pydantic snapshot models | Add `awarded_points` field to `PersistedPollState`. |
-| `daemon/__main__.py` | Daemon entrypoint + snapshot writer | Add `awarded_points` to the `poll` dict in `_runtime_snapshot()` (≈ lines 216-224). |
-| `tests/daemon/test_poll_state.py` | PollState unit tests | 4 new tests. |
-| `tests/docker/features/poll.feature` | BDD scenarios | 1 new `@seq` scenario. |
-| `tests/docker/step_defs/test_poll.py` | BDD step glue | **No changes expected.** All step definitions already exist (named-pax `is awarded N points`, `the host marks "X" as correct option`, etc.). |
+| `daemon/quiz/state.py` | Quiz lifecycle + scoring algorithm | Add `awarded_points`; reverse-then-apply in `reveal_correct`; drop `already_revealed`. |
+| `daemon/persisted_models.py` | Pydantic snapshot models | Add `awarded_points` field to `PersistedQuizState`. |
+| `daemon/__main__.py` | Daemon entrypoint + snapshot writer | Add `awarded_points` to the `quiz` dict in `_runtime_snapshot()` (≈ lines 216-224). |
+| `tests/daemon/test_quiz_state.py` | QuizState unit tests | 4 new tests. |
+| `tests/docker/features/quiz.feature` | BDD scenarios | 1 new `@seq` scenario. |
+| `tests/docker/step_defs/test_quiz.py` | BDD step glue | **No changes expected.** All step definitions already exist (named-pax `is awarded N points`, `the host marks "X" as correct option`, etc.). |
 
 ---
 
-## Task 1: Add `awarded_points` field to `PollState` (and reset hooks)
+## Task 1: Add `awarded_points` field to `QuizState` (and reset hooks)
 
-Introduce the new field, ensure it is reset alongside the other per-poll state in `__init__`, `clear()`, and `create_poll()`. No behavior change yet — `reveal_correct` does not touch the field in this task.
+Introduce the new field, ensure it is reset alongside the other per-quiz state in `__init__`, `clear()`, and `create_quiz()`. No behavior change yet — `reveal_correct` does not touch the field in this task.
 
 **Files:**
-- Modify: `daemon/poll/state.py:9-19, 21-38, 151-160`
-- Test:   `tests/daemon/test_poll_state.py` (append at end)
+- Modify: `daemon/quiz/state.py:9-19, 21-38, 151-160`
+- Test:   `tests/daemon/test_quiz_state.py` (append at end)
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `tests/daemon/test_poll_state.py`:
+Append to `tests/daemon/test_quiz_state.py`:
 
 ```python
 def test_awarded_points_initialized_empty():
-    ps = PollState()
+    ps = QuizState()
     assert ps.awarded_points == {}
 
 
-def test_awarded_points_reset_by_create_poll():
-    ps = PollState()
+def test_awarded_points_reset_by_create_quiz():
+    ps = QuizState()
     ps.awarded_points = {"alice": 1000, "bob": 500}
-    ps.create_poll("Q?", ["A", "B"])
+    ps.create_quiz("Q?", ["A", "B"])
     assert ps.awarded_points == {}
 
 
 def test_awarded_points_reset_by_clear():
-    ps = PollState()
+    ps = QuizState()
     ps.awarded_points = {"alice": 1000}
     ps.clear()
     assert ps.awarded_points == {}
@@ -59,12 +59,12 @@ def test_awarded_points_reset_by_clear():
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `uv run --extra dev --extra daemon pytest tests/daemon/test_poll_state.py::test_awarded_points_initialized_empty tests/daemon/test_poll_state.py::test_awarded_points_reset_by_create_poll tests/daemon/test_poll_state.py::test_awarded_points_reset_by_clear -v --confcutdir=tests/daemon`
-Expected: 3 FAIL with `AttributeError: 'PollState' object has no attribute 'awarded_points'`.
+Run: `uv run --extra dev --extra daemon pytest tests/daemon/test_quiz_state.py::test_awarded_points_initialized_empty tests/daemon/test_quiz_state.py::test_awarded_points_reset_by_create_quiz tests/daemon/test_quiz_state.py::test_awarded_points_reset_by_clear -v --confcutdir=tests/daemon`
+Expected: 3 FAIL with `AttributeError: 'QuizState' object has no attribute 'awarded_points'`.
 
 - [ ] **Step 3: Add the field to `__init__`**
 
-In `daemon/poll/state.py`, locate `class PollState: def __init__(self):` (around line 9). After the line `self._vote_counts_cache: list[int] | None = None` add:
+In `daemon/quiz/state.py`, locate `class QuizState: def __init__(self):` (around line 9). After the line `self._vote_counts_cache: list[int] | None = None` add:
 
 ```python
         self.awarded_points: dict[str, int] = {}  # pid → points awarded by most recent reveal_correct
@@ -78,9 +78,9 @@ The full `__init__` block then ends:
         self.awarded_points: dict[str, int] = {}  # pid → points awarded by most recent reveal_correct
 ```
 
-- [ ] **Step 4: Reset in `create_poll`**
+- [ ] **Step 4: Reset in `create_quiz`**
 
-In the same file, in `create_poll(...)` method (around line 21-38), after the existing `self._vote_counts_dirty = True` line, add:
+In the same file, in `create_quiz(...)` method (around line 21-38), after the existing `self._vote_counts_dirty = True` line, add:
 
 ```python
         self.awarded_points = {}
@@ -89,11 +89,11 @@ In the same file, in `create_poll(...)` method (around line 21-38), after the ex
 The bottom of the method should now read:
 
 ```python
-        self.poll_timer_seconds = None
-        self.poll_timer_started_at = None
+        self.quiz_timer_seconds = None
+        self.quiz_timer_started_at = None
         self._vote_counts_dirty = True
         self.awarded_points = {}
-        return dict(self.poll)
+        return dict(self.quiz)
 ```
 
 - [ ] **Step 5: Reset in `clear`**
@@ -108,13 +108,13 @@ The full method should read:
 
 ```python
     def clear(self) -> None:
-        self.poll = None
-        self.poll_active = False
+        self.quiz = None
+        self.quiz_active = False
         self.votes.clear()
-        self.poll_opened_at = None
-        self.poll_correct_indices = None
-        self.poll_timer_seconds = None
-        self.poll_timer_started_at = None
+        self.quiz_opened_at = None
+        self.quiz_correct_indices = None
+        self.quiz_timer_seconds = None
+        self.quiz_timer_started_at = None
         self._vote_counts_dirty = True
         self._vote_counts_cache = None
         self.awarded_points = {}
@@ -122,17 +122,17 @@ The full method should read:
 
 - [ ] **Step 6: Run tests to verify they pass**
 
-Run: `uv run --extra dev --extra daemon pytest tests/daemon/test_poll_state.py -v --confcutdir=tests/daemon`
+Run: `uv run --extra dev --extra daemon pytest tests/daemon/test_quiz_state.py -v --confcutdir=tests/daemon`
 Expected: All tests PASS (the 3 new + the existing ones — none of which should regress because `awarded_points` is unused so far).
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add daemon/poll/state.py tests/daemon/test_poll_state.py
-git commit -m "feat(poll): add awarded_points field to PollState
+git add daemon/quiz/state.py tests/daemon/test_quiz_state.py
+git commit -m "feat(quiz): add awarded_points field to QuizState
 
 No behavior change yet — field is initialized empty and reset by
-create_poll() and clear(), preparing for reveal_correct to use it
+create_quiz() and clear(), preparing for reveal_correct to use it
 in the next commit."
 ```
 
@@ -143,21 +143,21 @@ in the next commit."
 Make `reveal_correct` idempotent: subtract previously-awarded points before computing new ones, and record the new awards in `awarded_points`. Drop the `already_revealed` guard.
 
 **Files:**
-- Modify: `daemon/poll/state.py:78-141` (specifically the `already_revealed` line and the `if pts > 0 and not already_revealed` block)
-- Test:   `tests/daemon/test_poll_state.py` (append at end)
+- Modify: `daemon/quiz/state.py:78-141` (specifically the `already_revealed` line and the `if pts > 0 and not already_revealed` block)
+- Test:   `tests/daemon/test_quiz_state.py` (append at end)
 
 - [ ] **Step 1: Write the failing test for single-select re-reveal**
 
-Append to `tests/daemon/test_poll_state.py`:
+Append to `tests/daemon/test_quiz_state.py`:
 
 ```python
 def test_reveal_correct_twice_single_select_moves_points():
     """Second reveal with a different option must zero the first voter and award the new one."""
-    ps = PollState()
-    ps.create_poll("Q?", ["A", "B", "C"])
-    ps.open_poll(lambda: None)
+    ps = QuizState()
+    ps.create_quiz("Q?", ["A", "B", "C"])
+    ps.open_quiz(lambda: None)
     base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-    ps.poll_opened_at = base_time
+    ps.quiz_opened_at = base_time
     vote_time = (base_time + timedelta(seconds=1)).isoformat()
     ps.votes = {
         "alice": {"option_indices": [0], "voted_at": vote_time},   # voted A
@@ -180,22 +180,22 @@ def test_reveal_correct_twice_single_select_moves_points():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run --extra dev --extra daemon pytest tests/daemon/test_poll_state.py::test_reveal_correct_twice_single_select_moves_points -v --confcutdir=tests/daemon`
+Run: `uv run --extra dev --extra daemon pytest tests/daemon/test_quiz_state.py::test_reveal_correct_twice_single_select_moves_points -v --confcutdir=tests/daemon`
 Expected: FAIL — after the second reveal Alice still has 1000 (the `already_revealed` guard suppresses re-awarding) and Bob still has 0.
 
 - [ ] **Step 3: Modify `reveal_correct` — reverse previous awards, record new awards, drop `already_revealed`**
 
-In `daemon/poll/state.py`, replace the `reveal_correct` method (currently lines 78-141) with this version. Only three lines change vs. the current code, but show the full method to avoid ambiguity:
+In `daemon/quiz/state.py`, replace the `reveal_correct` method (currently lines 78-141) with this version. Only three lines change vs. the current code, but show the full method to avoid ambiguity:
 
 ```python
     def reveal_correct(self, correct_indices: list[int], scores_obj) -> dict:
         correct_set = set(correct_indices)
-        n = len(self.poll["options"]) if self.poll else 0
+        n = len(self.quiz["options"]) if self.quiz else 0
         all_indices = set(range(n))
         wrong_set = all_indices - correct_set
-        multi = self.poll.get("multi", False) if self.poll else False
+        multi = self.quiz.get("multi", False) if self.quiz else False
         now = datetime.now(timezone.utc)
-        opened_at = self.poll_opened_at or now
+        opened_at = self.quiz_opened_at or now
 
         # Reverse the awards from the previous reveal_correct (if any). This makes
         # reveal_correct idempotent: when the host changes which option is correct,
@@ -252,8 +252,8 @@ In `daemon/poll/state.py`, replace the `reveal_correct` method (currently lines 
                 scores_obj.add_score(pid, pts)
                 self.awarded_points[pid] = pts
 
-        self.poll_correct_indices = list(correct_set)
-        self._append_to_poll_md(correct_set)
+        self.quiz_correct_indices = list(correct_set)
+        self._append_to_quiz_md(correct_set)
         return {
             "correct_indices": list(correct_set),
             "scores": scores_obj.snapshot(),
@@ -263,32 +263,32 @@ In `daemon/poll/state.py`, replace the `reveal_correct` method (currently lines 
 
 The three behavior-relevant changes vs. the current method:
 
-1. **Removed:** `already_revealed = self.poll_correct_indices is not None`
+1. **Removed:** `already_revealed = self.quiz_correct_indices is not None`
 2. **Added** (after computing `opened_at`): the reverse-loop block + reset of `self.awarded_points`.
 3. **Replaced** `if pts > 0 and not already_revealed: scores_obj.add_score(pid, pts)` with `if pts > 0: scores_obj.add_score(pid, pts); self.awarded_points[pid] = pts`.
 
 - [ ] **Step 4: Run the failing test to verify it passes**
 
-Run: `uv run --extra dev --extra daemon pytest tests/daemon/test_poll_state.py::test_reveal_correct_twice_single_select_moves_points -v --confcutdir=tests/daemon`
+Run: `uv run --extra dev --extra daemon pytest tests/daemon/test_quiz_state.py::test_reveal_correct_twice_single_select_moves_points -v --confcutdir=tests/daemon`
 Expected: PASS.
 
-- [ ] **Step 5: Run the full poll-state test file to check no regressions**
+- [ ] **Step 5: Run the full quiz-state test file to check no regressions**
 
-Run: `uv run --extra dev --extra daemon pytest tests/daemon/test_poll_state.py -v --confcutdir=tests/daemon`
-Expected: All PASS. In particular, `test_reveal_correct_speed_scoring`, `test_reveal_correct_multi_proportional`, `test_reveal_correct_no_votes`, and `test_append_to_poll_md` must still pass — they only call `reveal_correct` once, so the new reversal loop is a no-op for them.
+Run: `uv run --extra dev --extra daemon pytest tests/daemon/test_quiz_state.py -v --confcutdir=tests/daemon`
+Expected: All PASS. In particular, `test_reveal_correct_speed_scoring`, `test_reveal_correct_multi_proportional`, `test_reveal_correct_no_votes`, and `test_append_to_quiz_md` must still pass — they only call `reveal_correct` once, so the new reversal loop is a no-op for them.
 
 - [ ] **Step 6: Write the failing test for multi-select partial-credit re-reveal**
 
-Append to `tests/daemon/test_poll_state.py`:
+Append to `tests/daemon/test_quiz_state.py`:
 
 ```python
 def test_reveal_correct_twice_multi_select_partial_credit():
-    """In multi-select polls, the partial-credit amount is what gets reversed."""
-    ps = PollState()
-    ps.create_poll("Q?", ["A", "B", "C", "D"], multi=True, correct_count=3)
-    ps.open_poll(lambda: None)
+    """In multi-select quizzes, the partial-credit amount is what gets reversed."""
+    ps = QuizState()
+    ps.create_quiz("Q?", ["A", "B", "C", "D"], multi=True, correct_count=3)
+    ps.open_quiz(lambda: None)
     base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-    ps.poll_opened_at = base_time
+    ps.quiz_opened_at = base_time
     vote_time = (base_time + timedelta(seconds=1)).isoformat()
     # Alice picks A,B,D. Bob picks C,D.
     ps.votes = {
@@ -314,21 +314,21 @@ def test_reveal_correct_twice_multi_select_partial_credit():
 
 - [ ] **Step 7: Run the multi-select test**
 
-Run: `uv run --extra dev --extra daemon pytest tests/daemon/test_poll_state.py::test_reveal_correct_twice_multi_select_partial_credit -v --confcutdir=tests/daemon`
+Run: `uv run --extra dev --extra daemon pytest tests/daemon/test_quiz_state.py::test_reveal_correct_twice_multi_select_partial_credit -v --confcutdir=tests/daemon`
 Expected: PASS (the same `reveal_correct` change covers both single and multi-select paths).
 
 - [ ] **Step 8: Write the failing test for empty correct set on second reveal**
 
-Append to `tests/daemon/test_poll_state.py`:
+Append to `tests/daemon/test_quiz_state.py`:
 
 ```python
 def test_reveal_correct_twice_empty_set_reverses_all():
     """If the host marks no options correct on the second reveal, all prior awards must be reversed."""
-    ps = PollState()
-    ps.create_poll("Q?", ["A", "B"])
-    ps.open_poll(lambda: None)
+    ps = QuizState()
+    ps.create_quiz("Q?", ["A", "B"])
+    ps.open_quiz(lambda: None)
     base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-    ps.poll_opened_at = base_time
+    ps.quiz_opened_at = base_time
     vote_time = (base_time + timedelta(seconds=1)).isoformat()
     ps.votes = {"alice": {"option_indices": [0], "voted_at": vote_time}}
     scores = MockScores()
@@ -339,27 +339,27 @@ def test_reveal_correct_twice_empty_set_reverses_all():
     ps.reveal_correct([], scores)
     assert scores.scores.get("alice", 0) == 0
     assert ps.awarded_points == {}
-    assert ps.poll_correct_indices == []
+    assert ps.quiz_correct_indices == []
 ```
 
 - [ ] **Step 9: Run the empty-set test**
 
-Run: `uv run --extra dev --extra daemon pytest tests/daemon/test_poll_state.py::test_reveal_correct_twice_empty_set_reverses_all -v --confcutdir=tests/daemon`
+Run: `uv run --extra dev --extra daemon pytest tests/daemon/test_quiz_state.py::test_reveal_correct_twice_empty_set_reverses_all -v --confcutdir=tests/daemon`
 Expected: PASS.
 
 - [ ] **Step 10: Run the full daemon test suite to check no other regression**
 
 Run: `uv run --extra dev --extra daemon pytest tests/daemon -v --confcutdir=tests/daemon`
-Expected: All PASS. Anything related to `poll_state.poll_correct_indices` truthiness needs particular attention.
+Expected: All PASS. Anything related to `quiz_state.quiz_correct_indices` truthiness needs particular attention.
 
 - [ ] **Step 11: Commit**
 
 ```bash
-git add daemon/poll/state.py tests/daemon/test_poll_state.py
-git commit -m "feat(poll): rescore on host correct-answer change
+git add daemon/quiz/state.py tests/daemon/test_quiz_state.py
+git commit -m "feat(quiz): rescore on host correct-answer change
 
 reveal_correct is now idempotent: each call reverses the previous
-awards from this poll, then re-applies fresh awards based on the
+awards from this quiz, then re-applies fresh awards based on the
 current correct_indices. The 'already_revealed' guard is gone.
 
 Single-select, multi-select partial-credit, and empty-set paths
@@ -368,7 +368,7 @@ are all covered by new tests."
 
 ---
 
-## Task 3: Add `awarded_points` to `PersistedPollState`
+## Task 3: Add `awarded_points` to `PersistedQuizState`
 
 Match the existing pattern (`correct_indices`, `votes`, `opened_at`, …) so the snapshot model matches what the writer emits.
 
@@ -376,15 +376,15 @@ Match the existing pattern (`correct_indices`, `votes`, `opened_at`, …) so the
 - Modify: `daemon/persisted_models.py:37-46`
 - Test:   none for this task — covered indirectly by the snapshot writer test in Task 4.
 
-- [ ] **Step 1: Add the field to `PersistedPollState`**
+- [ ] **Step 1: Add the field to `PersistedQuizState`**
 
-In `daemon/persisted_models.py`, locate `class PersistedPollState(PersistedModel):` (line 37). After the existing `votes:` field, add `awarded_points`:
+In `daemon/persisted_models.py`, locate `class PersistedQuizState(PersistedModel):` (line 37). After the existing `votes:` field, add `awarded_points`:
 
 ```python
-class PersistedPollState(PersistedModel):
-    """Poll snapshot persisted in session state."""
+class PersistedQuizState(PersistedModel):
+    """Quiz snapshot persisted in session state."""
 
-    definition: dict[str, Any] | None = Field(default=None, description="Poll question and options as shown to participants")
+    definition: dict[str, Any] | None = Field(default=None, description="Quiz question and options as shown to participants")
     active: bool | None = None
     correct_indices: list[int] = Field(default_factory=list, description="Option indices marked as correct answers")
     opened_at: str | None = None
@@ -396,7 +396,7 @@ class PersistedPollState(PersistedModel):
 
 - [ ] **Step 2: Verify the model still loads**
 
-Run: `uv run --extra dev --extra daemon python -c "from daemon.persisted_models import PersistedPollState; m = PersistedPollState(); print(m.model_dump())"`
+Run: `uv run --extra dev --extra daemon python -c "from daemon.persisted_models import PersistedQuizState; m = PersistedQuizState(); print(m.model_dump())"`
 Expected: prints a dict that includes `'awarded_points': {}`.
 
 - [ ] **Step 3: Run any model-related tests to confirm no regression**
@@ -413,9 +413,9 @@ Expected: All PASS.
 
 ```bash
 git add daemon/persisted_models.py
-git commit -m "feat(poll): persist awarded_points in PersistedPollState
+git commit -m "feat(quiz): persist awarded_points in PersistedQuizState
 
-Mirrors the existing per-poll fields (correct_indices, votes, …) so
+Mirrors the existing per-quiz fields (correct_indices, votes, …) so
 the snapshot model matches the writer in __main__.py."
 ```
 
@@ -423,7 +423,7 @@ the snapshot model matches the writer in __main__.py."
 
 ## Task 4: Wire `awarded_points` into the snapshot writer
 
-Add `awarded_points` to the `poll` dict produced by `_runtime_snapshot()` so it ends up in the on-disk session JSON.
+Add `awarded_points` to the `quiz` dict produced by `_runtime_snapshot()` so it ends up in the on-disk session JSON.
 
 **Files:**
 - Modify: `daemon/__main__.py:216-224`
@@ -431,7 +431,7 @@ Add `awarded_points` to the `poll` dict produced by `_runtime_snapshot()` so it 
 
 - [ ] **Step 1: Inspect the existing snapshot test pattern**
 
-Run: `uv run --extra dev --extra daemon pytest tests/daemon/test_daemon_state.py -v --confcutdir=tests/daemon -k "poll"`
+Run: `uv run --extra dev --extra daemon pytest tests/daemon/test_daemon_state.py -v --confcutdir=tests/daemon -k "quiz"`
 Read the matching test(s) in `tests/daemon/test_daemon_state.py` to mirror their fixture/style.
 
 - [ ] **Step 2: Write the failing test**
@@ -440,21 +440,21 @@ Append to `tests/daemon/test_daemon_state.py` (adapt the surrounding imports/fix
 
 ```python
 def test_runtime_snapshot_includes_awarded_points():
-    """The snapshot writer must surface poll_state.awarded_points so it round-trips to disk."""
+    """The snapshot writer must surface quiz_state.awarded_points so it round-trips to disk."""
     from daemon.__main__ import _runtime_snapshot
-    from daemon.poll.state import poll_state
+    from daemon.quiz.state import quiz_state
 
-    poll_state.create_poll("Q?", ["A", "B"])
-    poll_state.open_poll(lambda: None)
-    poll_state.awarded_points = {"alice": 750, "bob": 200}
+    quiz_state.create_quiz("Q?", ["A", "B"])
+    quiz_state.open_quiz(lambda: None)
+    quiz_state.awarded_points = {"alice": 750, "bob": 200}
 
     snap = _runtime_snapshot()
 
-    assert "poll" in snap
-    assert snap["poll"].get("awarded_points") == {"alice": 750, "bob": 200}
+    assert "quiz" in snap
+    assert snap["quiz"].get("awarded_points") == {"alice": 750, "bob": 200}
 
-    # Cleanup: leave global poll_state empty for subsequent tests in the suite.
-    poll_state.clear()
+    # Cleanup: leave global quiz_state empty for subsequent tests in the suite.
+    quiz_state.clear()
 ```
 
 - [ ] **Step 3: Run the test to verify it fails**
@@ -464,38 +464,38 @@ Expected: FAIL with `AssertionError` because `awarded_points` is not in the emit
 
 - [ ] **Step 4: Add `awarded_points` to the snapshot writer**
 
-In `daemon/__main__.py`, locate the `poll` block in `_runtime_snapshot()` (around line 216-224):
+In `daemon/__main__.py`, locate the `quiz` block in `_runtime_snapshot()` (around line 216-224):
 
 ```python
-        "poll": {
-            "definition": poll_state.poll,
-            "active": poll_state.poll_active,
-            "correct_indices": poll_state.poll_correct_indices or [],
-            "opened_at": poll_opened_at,
-            "timer_seconds": poll_state.poll_timer_seconds,
-            "timer_started_at": poll_timer_started_at,
-            "votes": dict(poll_state.votes),
+        "quiz": {
+            "definition": quiz_state.quiz,
+            "active": quiz_state.quiz_active,
+            "correct_indices": quiz_state.quiz_correct_indices or [],
+            "opened_at": quiz_opened_at,
+            "timer_seconds": quiz_state.quiz_timer_seconds,
+            "timer_started_at": quiz_timer_started_at,
+            "votes": dict(quiz_state.votes),
         },
 ```
 
-Add a new line after `"votes": dict(poll_state.votes),`:
+Add a new line after `"votes": dict(quiz_state.votes),`:
 
 ```python
-            "awarded_points": dict(poll_state.awarded_points),
+            "awarded_points": dict(quiz_state.awarded_points),
 ```
 
 The full block becomes:
 
 ```python
-        "poll": {
-            "definition": poll_state.poll,
-            "active": poll_state.poll_active,
-            "correct_indices": poll_state.poll_correct_indices or [],
-            "opened_at": poll_opened_at,
-            "timer_seconds": poll_state.poll_timer_seconds,
-            "timer_started_at": poll_timer_started_at,
-            "votes": dict(poll_state.votes),
-            "awarded_points": dict(poll_state.awarded_points),
+        "quiz": {
+            "definition": quiz_state.quiz,
+            "active": quiz_state.quiz_active,
+            "correct_indices": quiz_state.quiz_correct_indices or [],
+            "opened_at": quiz_opened_at,
+            "timer_seconds": quiz_state.quiz_timer_seconds,
+            "timer_started_at": quiz_timer_started_at,
+            "votes": dict(quiz_state.votes),
+            "awarded_points": dict(quiz_state.awarded_points),
         },
 ```
 
@@ -513,10 +513,10 @@ Expected: All PASS.
 
 ```bash
 git add daemon/__main__.py tests/daemon/test_daemon_state.py
-git commit -m "feat(poll): write awarded_points into session snapshot
+git commit -m "feat(quiz): write awarded_points into session snapshot
 
-Snapshot writer now emits poll.awarded_points alongside
-correct_indices/votes/etc. so it survives if/when poll restore is
+Snapshot writer now emits quiz.awarded_points alongside
+correct_indices/votes/etc. so it survives if/when quiz restore is
 wired up later."
 ```
 
@@ -527,12 +527,12 @@ wired up later."
 End-to-end coverage in the hermetic Docker test that exercises real daemon + Railway + browser. All required step definitions already exist; we only add Gherkin lines.
 
 **Files:**
-- Modify: `tests/docker/features/poll.feature`
+- Modify: `tests/docker/features/quiz.feature`
 - Test:   the same file (BDD self-tests).
 
 - [ ] **Step 1: Add the scenario to the feature file**
 
-In `tests/docker/features/poll.feature`, append at the end of the file (after the existing "Host sees live voted-count update as votes arrive" scenario):
+In `tests/docker/features/quiz.feature`, append at the end of the file (after the existing "Host sees live voted-count update as votes arrive" scenario):
 
 ```gherkin
 
@@ -540,7 +540,7 @@ In `tests/docker/features/poll.feature`, append at the end of the file (after th
   Scenario: Host changes the correct option, points re-flow
     Given a participant "Alice" selects "Java"
     And   a participant "Bob" selects "Python"
-    And   the host closes the poll
+    And   the host closes the quiz
     And   the host marks "Java" as correct option
     And   Alice is awarded 1000 points
     And   Bob is awarded 0 points
@@ -549,17 +549,17 @@ In `tests/docker/features/poll.feature`, append at the end of the file (after th
     And   Bob is awarded 1000 points
 ```
 
-Confirm by reading the file around the new scenario that no scenario separator (blank line) was missed and that the Background `Given a poll "Best language?" with options "Python;Java;Go"` from the top of the file applies — both `Java` and `Python` are valid options.
+Confirm by reading the file around the new scenario that no scenario separator (blank line) was missed and that the Background `Given a quiz "Best language?" with options "Python;Java;Go"` from the top of the file applies — both `Java` and `Python` are valid options.
 
 - [ ] **Step 2: Confirm no new step definitions are required**
 
-Compare every Given/When/Then in the new scenario against the registered step definitions in `tests/docker/step_defs/test_poll.py`. Each one should already exist:
+Compare every Given/When/Then in the new scenario against the registered step definitions in `tests/docker/step_defs/test_quiz.py`. Each one should already exist:
 
 | Step | Existing definition |
 |---|---|
 | `a participant "Alice" selects "Java"` | `named_pax_selects` (regex `_NAMED_PAX_RE_SELECT`) |
 | `a participant "Bob" selects "Python"` | `named_pax_selects` (regex `_NAMED_PAX_RE_SELECT`) |
-| `the host closes the poll` | `host_closes_poll` |
+| `the host closes the quiz` | `host_closes_quiz` |
 | `the host marks "Java" as correct option` | `host_marks_correct` (registered for both `@given` and `@when`) |
 | `Alice is awarded 1000 points` / `Bob is awarded 0 points` | `named_awarded` (regex `^(?P<name>...) is awarded (?P<n>\d+) points$`) — registered as `@then`, but BDD `And` after `Given` reuses the prior step type, so Given-level uses also resolve. **Note:** these lines appear in the `Given` block as `And`. Verify by running the scenario in step 4. If pytest-bdd refuses to bind a `@then` step in a Given block, register `named_awarded` for `@given` as well (one-line edit). |
 
@@ -568,7 +568,7 @@ Compare every Given/When/Then in the new scenario against the registered step de
 Run: `bash tests/docker/run-hermetic.sh -k "Host changes the correct option" -s`
 Expected: PASS, with the seq diagram extraction running (the scenario is `@seq`).
 
-If `named_awarded` fails to bind in the Given block (BDD step-type mismatch), apply this minimal fix to `tests/docker/step_defs/test_poll.py`:
+If `named_awarded` fails to bind in the Given block (BDD step-type mismatch), apply this minimal fix to `tests/docker/step_defs/test_quiz.py`:
 
 ```python
 @then(parsers.re(r"^(?P<name>[A-Z][a-zA-Z]+) is awarded (?P<n>\d+) points$"))
@@ -584,25 +584,25 @@ def named_awarded(name, n):
 Run: `bash tests/docker/run-hermetic.sh -k "Host changes the correct option" -s`
 Expected: PASS.
 
-- [ ] **Step 5: Run the full poll feature file to confirm no regression**
+- [ ] **Step 5: Run the full quiz feature file to confirm no regression**
 
-Run: `bash tests/docker/run-hermetic.sh -k "poll.feature" -s`
-Expected: All scenarios in `poll.feature` PASS.
+Run: `bash tests/docker/run-hermetic.sh -k "quiz.feature" -s`
+Expected: All scenarios in `quiz.feature` PASS.
 
 - [ ] **Step 6: Commit**
 
 If only the feature file was changed:
 
 ```bash
-git add tests/docker/features/poll.feature
-git commit -m "test(poll): BDD scenario for host changing correct answer"
+git add tests/docker/features/quiz.feature
+git commit -m "test(quiz): BDD scenario for host changing correct answer"
 ```
 
-If `test_poll.py` also got the `@given` decorator fix:
+If `test_quiz.py` also got the `@given` decorator fix:
 
 ```bash
-git add tests/docker/features/poll.feature tests/docker/step_defs/test_poll.py
-git commit -m "test(poll): BDD scenario for host changing correct answer
+git add tests/docker/features/quiz.feature tests/docker/step_defs/test_quiz.py
+git commit -m "test(quiz): BDD scenario for host changing correct answer
 
 Allows the 'is awarded N points' step to bind in Given blocks too,
 since the new scenario uses the assertion as a precondition before
@@ -647,13 +647,13 @@ Per project convention, wait for Railway to deploy and verify the production URL
 | `awarded_points` field added/reset | Task 1 |
 | Reverse-then-apply algorithm | Task 2 |
 | Drop `already_revealed` | Task 2 |
-| `PersistedPollState.awarded_points` field | Task 3 |
+| `PersistedQuizState.awarded_points` field | Task 3 |
 | Snapshot writer emits `awarded_points` | Task 4 |
-| Note: poll restore not wired (out of scope) | Confirmed in Task 3/4 — no `sync_from_restore` change |
+| Note: quiz restore not wired (out of scope) | Confirmed in Task 3/4 — no `sync_from_restore` change |
 | BDD scenario "Host changes the correct option, points re-flow" | Task 5 |
 | Daemon unit tests: single-select, multi-select, empty-set, reset on create/clear | Tasks 1 + 2 (4 new tests) |
-| `ScoresUpdatedMsg` / `PollCorrectRevealedMsg` unchanged | Task 2 (no change to the broadcast in `daemon/poll/router.py`) |
+| `ScoresUpdatedMsg` / `QuizCorrectRevealedMsg` unchanged | Task 2 (no change to the broadcast in `daemon/quiz/router.py`) |
 
-**Type/name consistency:** `awarded_points: dict[str, int]` is used identically in `PollState`, `PersistedPollState`, and the snapshot writer. The BDD scenario uses option text matching the Background poll (`Java`, `Python`).
+**Type/name consistency:** `awarded_points: dict[str, int]` is used identically in `QuizState`, `PersistedQuizState`, and the snapshot writer. The BDD scenario uses option text matching the Background quiz (`Java`, `Python`).
 
 **Placeholder scan:** No "TBD", "TODO", "implement later", or unspecified error handling. Each step shows the exact code or command to run.

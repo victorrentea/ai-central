@@ -1,4 +1,4 @@
-# Topic-Based Poll Generation with RAG — Design Spec
+# Topic-Based Quiz Generation with RAG — Design Spec
 
 **Date:** 2026-03-19
 **Status:** Approved
@@ -7,7 +7,7 @@
 
 ## Overview
 
-Add a second poll generation mode to the host panel: **topic-based generation**. The host types a short topic (e.g. "circuit breaker", "outbox table") and the system retrieves relevant content from local PDF training materials via RAG, then asks Claude to craft a debate-triggering poll question grounded in those materials.
+Add a second quiz generation mode to the host panel: **topic-based generation**. The host types a short topic (e.g. "circuit breaker", "outbox table") and the system retrieves relevant content from local PDF training materials via RAG, then asks Claude to craft a debate-triggering quiz question grounded in those materials.
 
 The key constraint: heavy ML dependencies (ChromaDB, sentence-transformers) must never reach Railway. They live only in a local `daemon/` sub-project on the trainer's Mac.
 
