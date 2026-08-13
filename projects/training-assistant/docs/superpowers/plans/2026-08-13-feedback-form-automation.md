@@ -77,11 +77,11 @@ from daemon.session import state as session_shared_state
 
 
 def test_save_then_load_roundtrip(tmp_path):
-    created_at = save_feedback_form(tmp_path, "AI@Rabo", "https://freeonlinesurveys.com/s/zmb9VqST")
+    created_at = save_feedback_form(tmp_path, "AI@Acme", "https://freeonlinesurveys.com/s/demo1234")
     loaded = load_feedback_form(tmp_path)
     assert loaded == {
-        "title": "AI@Rabo",
-        "url": "https://freeonlinesurveys.com/s/zmb9VqST",
+        "title": "AI@Acme",
+        "url": "https://freeonlinesurveys.com/s/demo1234",
         "created_at": created_at,
     }
 
@@ -110,8 +110,8 @@ def test_save_overwrites_previous_form(tmp_path):
 def test_shared_state_roundtrip():
     try:
         assert session_shared_state.get_feedback_url() is None
-        session_shared_state.set_feedback_url("https://freeonlinesurveys.com/s/zmb9VqST")
-        assert session_shared_state.get_feedback_url() == "https://freeonlinesurveys.com/s/zmb9VqST"
+        session_shared_state.set_feedback_url("https://freeonlinesurveys.com/s/demo1234")
+        assert session_shared_state.get_feedback_url() == "https://freeonlinesurveys.com/s/demo1234"
         session_shared_state.set_feedback_url(None)
         assert session_shared_state.get_feedback_url() is None
     finally:
@@ -339,19 +339,19 @@ def test_post_feedback_form_persists_broadcasts_and_publishes(tmp_path, monkeypa
     try:
         resp = client.post(
             "/feedback-form",
-            json={"title": "AI@Rabo", "url": "https://freeonlinesurveys.com/s/zmb9VqST"},
+            json={"title": "AI@Acme", "url": "https://freeonlinesurveys.com/s/demo1234"},
         )
         assert resp.status_code == 200
-        assert resp.json()["url"] == "https://freeonlinesurveys.com/s/zmb9VqST"
+        assert resp.json()["url"] == "https://freeonlinesurveys.com/s/demo1234"
 
         # persisted for restart survival
-        assert load_feedback_form(tmp_path)["title"] == "AI@Rabo"
+        assert load_feedback_form(tmp_path)["title"] == "AI@Acme"
         # published to participants joining later
-        assert session_shared_state.get_feedback_url() == "https://freeonlinesurveys.com/s/zmb9VqST"
+        assert session_shared_state.get_feedback_url() == "https://freeonlinesurveys.com/s/demo1234"
         # pushed to participants already connected
         assert len(sent) == 1
         assert sent[0].type == "feedback_form_updated"
-        assert sent[0].feedback_url == "https://freeonlinesurveys.com/s/zmb9VqST"
+        assert sent[0].feedback_url == "https://freeonlinesurveys.com/s/demo1234"
     finally:
         session_shared_state.set_feedback_url(None)
 
@@ -367,7 +367,7 @@ def test_post_feedback_form_404_without_active_session(monkeypatch):
     app.include_router(misc_router.local_router)
     resp = TestClient(app).post(
         "/feedback-form",
-        json={"title": "AI@Rabo", "url": "https://freeonlinesurveys.com/s/zmb9VqST"},
+        json={"title": "AI@Acme", "url": "https://freeonlinesurveys.com/s/demo1234"},
     )
     assert resp.status_code == 404
 ```
@@ -481,12 +481,12 @@ def test_participant_state_payload_carries_feedback_url():
 
 def test_boot_restore_reads_url_from_session_folder(tmp_path):
     """The daemon restarts on every push to master — the link must come back."""
-    save_feedback_form(tmp_path, "AI@Rabo", "https://freeonlinesurveys.com/s/zmb9VqST")
+    save_feedback_form(tmp_path, "AI@Acme", "https://freeonlinesurveys.com/s/demo1234")
     session_shared_state.set_feedback_url(None)  # simulate a fresh process
     try:
         restored = load_feedback_form(tmp_path)
         session_shared_state.set_feedback_url(restored["url"] if restored else None)
-        assert session_shared_state.get_feedback_url() == "https://freeonlinesurveys.com/s/zmb9VqST"
+        assert session_shared_state.get_feedback_url() == "https://freeonlinesurveys.com/s/demo1234"
     finally:
         session_shared_state.set_feedback_url(None)
 ```
@@ -572,9 +572,9 @@ def test_session_switch_does_not_leak_the_previous_sessions_form(tmp_path):
 
     Otherwise one client's feedback form stays live in the next client's room.
     """
-    previous = tmp_path / "2026-08-11..13 AI@Rabo"
+    previous = tmp_path / "2026-08-11..13 AI@Acme"
     previous.mkdir()
-    save_feedback_form(previous, "AI@Rabo", "https://freeonlinesurveys.com/s/old")
+    save_feedback_form(previous, "AI@Acme", "https://freeonlinesurveys.com/s/old")
     session_shared_state.set_feedback_url("https://freeonlinesurveys.com/s/old")
 
     entering = tmp_path / "2026-08-20 DDD@ING"
@@ -589,14 +589,14 @@ def test_session_switch_does_not_leak_the_previous_sessions_form(tmp_path):
 
 def test_session_switch_restores_a_resumed_sessions_form(tmp_path):
     """Re-entering a session whose form was already published restores it."""
-    folder = tmp_path / "2026-08-11..13 AI@Rabo"
+    folder = tmp_path / "2026-08-11..13 AI@Acme"
     folder.mkdir()
-    save_feedback_form(folder, "AI@Rabo", "https://freeonlinesurveys.com/s/zmb9VqST")
+    save_feedback_form(folder, "AI@Acme", "https://freeonlinesurveys.com/s/demo1234")
     session_shared_state.set_feedback_url(None)
     try:
         found = load_feedback_form(folder)
         session_shared_state.set_feedback_url(found["url"] if found else None)
-        assert session_shared_state.get_feedback_url() == "https://freeonlinesurveys.com/s/zmb9VqST"
+        assert session_shared_state.get_feedback_url() == "https://freeonlinesurveys.com/s/demo1234"
     finally:
         session_shared_state.set_feedback_url(None)
 ```
@@ -755,7 +755,7 @@ Start the daemon, join as a participant on `http://localhost:8081/`, then publis
 ```bash
 curl -sS -X POST http://127.0.0.1:1234/feedback-form \
   -H 'Content-Type: application/json' \
-  -d '{"title":"AI@Rabo","url":"https://freeonlinesurveys.com/s/zmb9VqST"}'
+  -d '{"title":"AI@Acme","url":"https://freeonlinesurveys.com/s/demo1234"}'
 ```
 
 Expected: the CTA appears immediately without a refresh, and "Feedback form" shows in the left nav. Reload the page: the nav item persists, the CTA stays gone after being dismissed. **Take a screenshot of the left nav and the CTA** — visual changes need visual proof.
@@ -800,12 +800,12 @@ def test_feedback_link_appears_live_without_reload(hermetic_stack, participant_p
 
     hermetic_stack.daemon_post(
         "/feedback-form",
-        {"title": "AI@Rabo", "url": "https://freeonlinesurveys.com/s/zmb9VqST"},
+        {"title": "AI@Acme", "url": "https://freeonlinesurveys.com/s/demo1234"},
     )
 
     participant_page.wait_for_selector("#feedback-row:visible", timeout=5000)
     assert participant_page.locator("#feedback-nav").get_attribute("href") == (
-        "https://freeonlinesurveys.com/s/zmb9VqST"
+        "https://freeonlinesurveys.com/s/demo1234"
     )
     participant_page.wait_for_selector("#feedback-cta:visible", timeout=5000)
 
@@ -816,7 +816,7 @@ def test_feedback_link_survives_daemon_restart(hermetic_stack, participant_page)
     the daemon, and the link must still be there afterwards."""
     hermetic_stack.daemon_post(
         "/feedback-form",
-        {"title": "AI@Rabo", "url": "https://freeonlinesurveys.com/s/zmb9VqST"},
+        {"title": "AI@Acme", "url": "https://freeonlinesurveys.com/s/demo1234"},
     )
     participant_page.wait_for_selector("#feedback-row:visible", timeout=5000)
 
@@ -825,7 +825,7 @@ def test_feedback_link_survives_daemon_restart(hermetic_stack, participant_page)
     participant_page.reload()
     participant_page.wait_for_selector("#feedback-row:visible", timeout=10000)
     assert participant_page.locator("#feedback-nav").get_attribute("href") == (
-        "https://freeonlinesurveys.com/s/zmb9VqST"
+        "https://freeonlinesurveys.com/s/demo1234"
     )
 ```
 
@@ -880,8 +880,8 @@ from session_folder import derive_form_title, is_last_day, last_day
 
 
 @pytest.mark.parametrize("folder,expected", [
-    ("2026-08-11..13 AI@Rabo", "AI@Rabo"),
-    ("2026-08-13 AI@Rabo", "AI@Rabo"),
+    ("2026-08-11..13 AI@Acme", "AI@Acme"),
+    ("2026-08-13 AI@Acme", "AI@Acme"),
     ("2026-07-09..10 Spring Boot@ING", "Spring Boot@ING"),
     ("2026-08-13  Extra   Spaces@Client", "Extra   Spaces@Client"),
 ])
@@ -890,8 +890,8 @@ def test_derive_form_title_strips_the_date_prefix(folder, expected):
 
 
 @pytest.mark.parametrize("folder,expected", [
-    ("2026-08-11..13 AI@Rabo", date(2026, 8, 13)),
-    ("2026-08-13 AI@Rabo", date(2026, 8, 13)),
+    ("2026-08-11..13 AI@Acme", date(2026, 8, 13)),
+    ("2026-08-13 AI@Acme", date(2026, 8, 13)),
     ("2026-08-30..09-02 Long@Client", date(2026, 9, 2)),
 ])
 def test_last_day_handles_single_and_ranged_folders(folder, expected):
@@ -899,19 +899,19 @@ def test_last_day_handles_single_and_ranged_folders(folder, expected):
 
 
 def test_is_last_day_true_only_on_the_final_date():
-    folder = "2026-08-11..13 AI@Rabo"
+    folder = "2026-08-11..13 AI@Acme"
     assert is_last_day(folder, date(2026, 8, 13)) is True
     assert is_last_day(folder, date(2026, 8, 12)) is False
     assert is_last_day(folder, date(2026, 8, 11)) is False
 
 
 def test_single_date_folder_is_always_its_own_last_day():
-    assert is_last_day("2026-08-13 AI@Rabo", date(2026, 8, 13)) is True
+    assert is_last_day("2026-08-13 AI@Acme", date(2026, 8, 13)) is True
 
 
 def test_unparseable_folder_raises():
     with pytest.raises(ValueError):
-        last_day("no-date-here AI@Rabo")
+        last_day("no-date-here AI@Acme")
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
@@ -927,7 +927,7 @@ Create `~/workspace/ai/skills/feedback-form/session_folder.py`:
 """Parse a training session folder name into a form title and its last day.
 
 Folder names look like `YYYY-MM-DD[..DD|..MM-DD] Topic@client`, e.g.
-`2026-08-11..13 AI@Rabo`. The FOS form title is exactly the `Topic@client`
+`2026-08-11..13 AI@Acme`. The FOS form title is exactly the `Topic@client`
 tail, which is why cloning + retitling can run unattended.
 """
 from __future__ import annotations
@@ -950,7 +950,7 @@ def _match(folder_name: str) -> re.Match:
 
 
 def derive_form_title(folder_name: str) -> str:
-    """`2026-08-11..13 AI@Rabo` -> `AI@Rabo`."""
+    """`2026-08-11..13 AI@Acme` -> `AI@Acme`."""
     return folder_name[_match(folder_name).end():].strip()
 
 
@@ -1020,7 +1020,7 @@ session. **Never attempt to automate the Google login itself.**
 
 - `session_folder` — absolute path to the session folder.
 - Derive the title with `python3 session_folder.py` helpers:
-  `derive_form_title("2026-08-11..13 AI@Rabo")` → `AI@Rabo`.
+  `derive_form_title("2026-08-11..13 AI@Acme")` → `AI@Acme`.
   **Print the derived title before using it** — this runs unattended, so the
   scrollback is the only record.
 

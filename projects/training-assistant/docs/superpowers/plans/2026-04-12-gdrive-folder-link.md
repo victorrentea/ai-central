@@ -102,7 +102,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 2: Test manually**
 
-Run: `python3 scripts/resolve_gdrive_link.py "/Users/victorrentea/My Drive/Cursuri/###sesiuni/2026-04-07..09 AI@ThinkSkink"`
+Run: `python3 scripts/resolve_gdrive_link.py "/Users/victorrentea/My Drive/Cursuri/###sesiuni/2026-04-07..09 AI@Globex"`
 Expected: `https://drive.google.com/drive/folders/1Lx2Fv-rZoIemjfzu_uDEQldzDH3kgIMX`
 
 - [ ] **Step 3: Commit**

@@ -35,7 +35,7 @@ derived **form title** (in) and the published **form URL** (out).
 
 ```
 training-summarizer (last day only)
-        │  title = "AI@Rabo"
+        │  title = "AI@Acme"
         ▼
   feedback-form skill  ──(Claude in Chrome)──▶  freeonlinesurveys.com
         │  {title, url, qr_png_path}
@@ -99,7 +99,7 @@ so the automation can be exercised without creating a live client-facing form.
 the last date. A single-date folder is trivially the last day.
 
 **Title derivation.** The folder name minus its date prefix. `2026-08-11..13
-AI@Rabo` → `AI@Rabo` — exactly the title format already in use on FOS. The
+AI@Acme` → `AI@Acme` — exactly the title format already in use on FOS. The
 derived title is printed before it is used, so it lands in Victor's scrollback
 even though the run is unattended.
 
